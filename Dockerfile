@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1
 
 # ---- build ----
-FROM golang:1.26 AS build
+# Chainguard's Wolfi-based Go toolchain image. Build as root so the BuildKit
+# cache mounts (/go, /root/.cache) are writable; this stage is not shipped.
+FROM cgr.dev/chainguard/go:latest AS build
+USER root
 WORKDIR /src
+ENV CGO_ENABLED=0 GOOS=linux GOPATH=/go GOCACHE=/root/.cache/go-build
 
 # Cache modules first.
 COPY go.mod go.sum ./
@@ -13,12 +17,14 @@ COPY . .
 ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build \
+    go build \
     -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
     -o /out/jiramcp ./cmd/server
 
 # ---- runtime ----
-FROM gcr.io/distroless/static:nonroot
+# Chainguard's minimal static base (distroless-style): no shell/package manager,
+# ships ca-certificates + tzdata, and defaults to the nonroot user 65532.
+FROM cgr.dev/chainguard/static:latest
 WORKDIR /
 COPY --from=build /out/jiramcp /jiramcp
 USER 65532:65532

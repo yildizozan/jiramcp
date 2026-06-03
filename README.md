@@ -101,8 +101,8 @@ In `http` mode the server requires `MCP_AUTH_TOKEN` (or set
 make docker IMAGE=ghcr.io/acme/jiramcp VERSION=0.1.0
 ```
 
-Multi-stage build → `gcr.io/distroless/static:nonroot`, static `CGO_ENABLED=0`
-binary, runs as UID 65532.
+Multi-stage build (Chainguard `cgr.dev/chainguard/go` → `cgr.dev/chainguard/static`),
+static `CGO_ENABLED=0` binary, runs as UID 65532.
 
 ## Kubernetes (Helm)
 
