@@ -14,10 +14,9 @@ import (
 
 // Checker probes a dependency and caches the latest result.
 type Checker struct {
-	ready   atomic.Bool
-	lastErr atomic.Pointer[string]
-	probe   func(ctx context.Context) error
-	logger  *slog.Logger
+	ready  atomic.Bool
+	probe  func(ctx context.Context) error
+	logger *slog.Logger
 
 	interval time.Duration
 	timeout  time.Duration
@@ -59,16 +58,14 @@ func (c *Checker) Run(ctx context.Context) {
 func (c *Checker) refresh(ctx context.Context) {
 	pctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	err := c.probe(pctx)
-	if err != nil {
-		msg := err.Error()
-		c.lastErr.Store(&msg)
+	if err := c.probe(pctx); err != nil {
+		// Log the (possibly sensitive) failure detail server-side only; it is
+		// never surfaced on the unauthenticated /readyz endpoint.
 		if c.ready.Swap(false) {
-			c.logger.Warn("readiness degraded", "error", msg)
+			c.logger.Warn("readiness degraded", "error", err.Error())
 		}
 		return
 	}
-	c.lastErr.Store(nil)
 	if !c.ready.Swap(true) {
 		c.logger.Info("readiness restored")
 	}
@@ -93,11 +90,10 @@ func (c *Checker) Handler() http.Handler {
 			writeJSON(w, http.StatusOK, map[string]any{"status": "ready"})
 			return
 		}
-		body := map[string]any{"status": "not ready"}
-		if p := c.lastErr.Load(); p != nil {
-			body["error"] = *p
-		}
-		writeJSON(w, http.StatusServiceUnavailable, body)
+		// Deliberately generic: the dependency error (which can include the Jira
+		// URL, HTTP status, or upstream message) is logged server-side and must
+		// not leak to this unauthenticated endpoint.
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"status": "not ready"})
 	})
 	return mux
 }
