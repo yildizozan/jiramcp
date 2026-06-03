@@ -8,3 +8,6 @@ coverage*
 .DS_Store
 .idea/
 .claude/
+
+# Real deploy values (company-specific); provide your own, keep it out of the repo.
+/mcp.values.yaml
