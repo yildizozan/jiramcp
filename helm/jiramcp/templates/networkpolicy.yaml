@@ -12,6 +12,7 @@ spec:
   policyTypes:
     - Ingress
     - Egress
+  {{- if .Values.networkPolicy.allowedClientNamespaces }}
   ingress:
     - from:
         {{- range .Values.networkPolicy.allowedClientNamespaces }}
@@ -24,6 +25,12 @@ spec:
           protocol: TCP
         - port: health
           protocol: TCP
+  {{- else }}
+  # No allowedClientNamespaces configured: deny all ingress. An empty `from:`
+  # would instead match every source (allow-all), so emit an empty rule list to
+  # lock the pod down explicitly.
+  ingress: []
+  {{- end }}
   egress:
     # DNS resolution.
     - to: []
@@ -32,9 +39,21 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # HTTPS egress to Jira (FQDN restriction requires a CNI that supports it).
+    # HTTPS egress to Jira, restricted to allowedEgressCIDRs (an empty `to:`
+    # would allow all destinations; FQDN restriction requires a capable CNI).
+    {{- if .Values.networkPolicy.allowedEgressCIDRs }}
+    - to:
+        {{- range .Values.networkPolicy.allowedEgressCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+    {{- else }}
     - to: []
       ports:
         - port: 443
           protocol: TCP
+    {{- end }}
 {{- end }}

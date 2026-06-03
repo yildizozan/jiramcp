@@ -101,8 +101,14 @@ podDisruptionBudget:
 
 networkPolicy:
   enabled: false
-  # CIDRs/namespaces allowed to reach the MCP port. Empty => allow none extra.
+  # Namespaces allowed to reach the MCP/health ports. Empty => deny all ingress
+  # (the pod is locked down); list client namespaces to allow them in.
   allowedClientNamespaces: []
+  # CIDRs the pod may reach on :443 (Jira). Default allows all; narrow this to
+  # the Jira server's address range to limit egress/SSRF blast radius. Empty
+  # also allows all (FQDN-based restriction requires a CNI that supports it).
+  allowedEgressCIDRs:
+    - 0.0.0.0/0
 
 serviceAccount:
   create: true

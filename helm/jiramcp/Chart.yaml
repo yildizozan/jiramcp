@@ -2,7 +2,7 @@ apiVersion: v2
 name: jiramcp
 description: MCP server that creates Jira tickets on behalf of a named person for a team
 type: application
-version: 0.3.0
+version: 0.3.1
 appVersion: "0.3.0"
 keywords:
   - mcp
