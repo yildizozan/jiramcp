@@ -17,6 +17,18 @@ Smoke test from a debug pod (replace $TOKEN with the MCP bearer token):
     http://{{ include "jiramcp.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}{{ .Values.mcp.httpPath }} \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
+{{- if .Values.jira.existingSecret }}
+
+Credential rotation: pods load credentials from Secret {{ .Values.jira.existingSecret }}
+at startup; updating that Secret does NOT restart them on its own.
+{{- if .Values.reloader.enabled }}
+reloader.enabled=true: the Deployment is annotated for stakater/reloader, which
+rolls it automatically when the Secret changes (requires the controller).
+{{- else }}
+Enable reloader.enabled (with stakater/reloader installed), or roll manually:
+  kubectl -n {{ .Release.Namespace }} rollout restart deployment/{{ include "jiramcp.fullname" . }}
+{{- end }}
+{{- end }}
 {{- if .Values.mcp.allowUnauthenticated }}
 
 WARNING: mcp.allowUnauthenticated=true — the MCP endpoint has NO authentication.

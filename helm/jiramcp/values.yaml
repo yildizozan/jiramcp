@@ -110,6 +110,15 @@ networkPolicy:
   allowedEgressCIDRs:
     - 0.0.0.0/0
 
+# Credential/config rotation. Pods read JIRA_PAT / MCP_AUTH_TOKEN from the Secret
+# at startup; when the Secret is external (jira.existingSecret) Helm cannot hash
+# its contents to roll pods on rotation. Enable this to annotate the Deployment
+# for stakater/reloader, which restarts it when the referenced Secret/ConfigMap
+# change. No-op (harmless annotation) if the Reloader controller is not installed;
+# without it, rotate by running `kubectl rollout restart deployment/<name>`.
+reloader:
+  enabled: false
+
 serviceAccount:
   create: true
   name: ""

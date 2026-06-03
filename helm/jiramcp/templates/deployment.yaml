@@ -5,6 +5,14 @@ metadata:
   name: {{ include "jiramcp.fullname" . }}
   labels:
     {{- include "jiramcp.labels" . | nindent 4 }}
+  {{- if .Values.reloader.enabled }}
+  annotations:
+    # Roll the Deployment when its Secret/ConfigMap change out-of-band (e.g. an
+    # external Secret rotated by External Secrets Operator) — Helm cannot hash a
+    # Secret it does not render. Requires the stakater/reloader controller; a
+    # harmless unknown annotation if it is not installed.
+    reloader.stakater.com/auto: "true"
+  {{- end }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -15,7 +23,10 @@ spec:
   template:
     metadata:
       annotations:
-        # Roll pods when config/secret content changes.
+        # Roll pods when chart-rendered config/secret content changes on
+        # `helm upgrade`. Out-of-band rotation of an external Secret is handled
+        # by Reloader instead (see .Values.reloader); Helm cannot hash a Secret
+        # it does not render.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         {{- if not .Values.jira.existingSecret }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
