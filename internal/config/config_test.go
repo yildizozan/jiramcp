@@ -85,6 +85,18 @@ func TestLoad_RejectsDuplicateNormalizedTeam(t *testing.T) {
 	}
 }
 
+func TestLoad_RejectsDuplicateProjectKey(t *testing.T) {
+	t.Setenv("JIRA_BASE_URL", "https://jira.acme.internal")
+	t.Setenv("JIRA_PAT", "pat")
+	t.Setenv("MCP_TRANSPORT", "stdio")
+	// Two teams routing to the same project (case-insensitively) is rejected so
+	// the defaults applied for that project stay deterministic.
+	t.Setenv("JIRA_TEAM_MAPPING_YAML", "teams:\n  alpha:\n    projectKey: PAY\n  beta:\n    projectKey: pay\n")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error when two teams map to the same project key")
+	}
+}
+
 func TestLoad_RequiresAuthTokenForHTTP(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "https://acme.atlassian.net")
 	t.Setenv("JIRA_AUTH_EMAIL", "svc@acme.com")

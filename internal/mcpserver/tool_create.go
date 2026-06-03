@@ -130,7 +130,9 @@ func (s *Server) resolveProject(team, project string) (string, config.TeamConfig
 		if !s.teams.IsMappedProject(key) {
 			return "", config.TeamConfig{}, fmt.Errorf("project %q is not in the team mapping", key)
 		}
-		// Surface defaults from a team that maps to this project, if any.
+		// Surface defaults from the team that maps to this project, if any.
+		// Config load rejects duplicate project keys, so at most one team
+		// matches and the chosen defaults are deterministic.
 		for _, cfg := range s.teams.Teams {
 			if strings.EqualFold(cfg.ProjectKey, key) {
 				return key, cfg, nil

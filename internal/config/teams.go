@@ -82,8 +82,10 @@ var reservedFields = map[string]struct{}{
 }
 
 func (m *TeamMapping) validate() error {
+	byProject := make(map[string]string, len(m.Teams)) // normalized projectKey -> team
 	for name, cfg := range m.Teams {
-		if strings.TrimSpace(cfg.ProjectKey) == "" {
+		key := strings.TrimSpace(cfg.ProjectKey)
+		if key == "" {
 			return fmt.Errorf("team %q has no projectKey", name)
 		}
 		for id := range cfg.Fields {
@@ -91,6 +93,18 @@ func (m *TeamMapping) validate() error {
 				return fmt.Errorf("team %q: fields.%s is a reserved core field and cannot be set via the mapping", name, id)
 			}
 		}
+		// Reject two teams routing to the same project: resolveProject picks a
+		// team by project key, so a collision would make the applied defaults
+		// (labels/components/fields) depend on Go map iteration order.
+		norm := strings.ToUpper(key)
+		if other, dup := byProject[norm]; dup {
+			a, b := name, other
+			if a > b {
+				a, b = b, a
+			}
+			return fmt.Errorf("teams %q and %q both map to project %q; each project may be routed by at most one team", a, b, norm)
+		}
+		byProject[norm] = name
 	}
 	if m.DefaultTeam != "" {
 		if _, ok := m.Teams[m.DefaultTeam]; !ok {
