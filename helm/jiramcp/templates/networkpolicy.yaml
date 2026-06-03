@@ -1,0 +1,40 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "jiramcp.fullname" . }}
+  labels:
+    {{- include "jiramcp.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "jiramcp.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.allowedClientNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: mcp
+          protocol: TCP
+        - port: health
+          protocol: TCP
+  egress:
+    # DNS resolution.
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # HTTPS egress to Jira (FQDN restriction requires a CNI that supports it).
+    - to: []
+      ports:
+        - port: 443
+          protocol: TCP
+{{- end }}

@@ -1,0 +1,9 @@
+.git
+.gitignore
+.idea
+.review
+bin
+helm
+*.md
+Dockerfile
+Makefile

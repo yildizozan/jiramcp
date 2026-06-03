@@ -1,0 +1,135 @@
+# Default values for jiramcp.
+
+replicaCount: 2
+
+image:
+  registry: docker.io           # override for a private/mirror registry; set "" to omit
+  repository: yildizozan/jiramcp
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# Jira connection
+# ---------------------------------------------------------------------------
+jira:
+  baseUrl: ""                 # e.g. https://acme.atlassian.net  (REQUIRED)
+  authMode: cloud             # cloud (email+token) | dc (PAT)
+  defaultIssueType: Task
+  httpTimeout: 15s
+
+  # Provide credentials either via an existing Secret (recommended, works with
+  # External Secrets Operator) or have the chart create one from the values
+  # below. Never commit real secrets to values.yaml.
+  existingSecret: ""
+  # Keys to read from the (existing or generated) Secret.
+  secretKeys:
+    authEmail: JIRA_AUTH_EMAIL
+    apiToken: JIRA_API_TOKEN
+    pat: JIRA_PAT
+  # Used only when existingSecret is empty (chart creates the Secret).
+  secret:
+    authEmail: ""
+    apiToken: ""
+    pat: ""
+
+# Team -> project routing (YAML). Rendered into a ConfigMap and mounted as a
+# file; the app reads it via JIRA_TEAM_MAPPING_FILE.
+teamMapping:
+  inlineYaml: |
+    teams:
+      platform:
+        projectKey: PLAT
+        defaultIssueType: Task
+    defaultTeam: platform
+
+# ---------------------------------------------------------------------------
+# MCP server
+# ---------------------------------------------------------------------------
+mcp:
+  transport: http             # http | stdio
+  httpPath: /mcp
+  # Bearer token required to call the HTTP endpoint. Strongly recommended.
+  # Sourced from the Secret (key MCP_AUTH_TOKEN) like other credentials.
+  authToken: ""               # used only when existingSecret is empty
+  authTokenKey: MCP_AUTH_TOKEN
+  # Disable HTTP auth entirely. DANGEROUS — local/dev only.
+  allowUnauthenticated: false
+
+logging:
+  level: info                 # debug|info|warn|error
+  format: json                # json|text
+
+service:
+  type: ClusterIP
+  port: 8080
+  healthPort: 8081
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: jiramcp.example.com
+      paths:
+        - path: /mcp
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+autoscaling:
+  # Safe to enable: the HTTP transport runs stateless, so replicas need no
+  # sticky sessions.
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: false
+  # CIDRs/namespaces allowed to reach the MCP port. Empty => allow none extra.
+  allowedClientNamespaces: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod/container hardening (overridable).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+podAnnotations: {}
+podLabels: {}
+extraEnv: []

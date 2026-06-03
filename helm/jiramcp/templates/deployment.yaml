@@ -1,0 +1,153 @@
+{{- include "jiramcp.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jiramcp.fullname" . }}
+  labels:
+    {{- include "jiramcp.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "jiramcp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll pods when config/secret content changes.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.jira.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "jiramcp.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "jiramcp.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: jiramcp
+          image: {{ include "jiramcp.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: mcp
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.service.healthPort }}
+              protocol: TCP
+          env:
+            - name: JIRA_BASE_URL
+              value: {{ .Values.jira.baseUrl | quote }}
+            - name: JIRA_AUTH_MODE
+              value: {{ .Values.jira.authMode | quote }}
+            - name: JIRA_DEFAULT_ISSUE_TYPE
+              value: {{ .Values.jira.defaultIssueType | quote }}
+            - name: JIRA_HTTP_TIMEOUT
+              value: {{ .Values.jira.httpTimeout | quote }}
+            - name: JIRA_TEAM_MAPPING_FILE
+              value: /etc/jiramcp/team-mapping.yaml
+            - name: MCP_TRANSPORT
+              value: {{ .Values.mcp.transport | quote }}
+            - name: MCP_HTTP_ADDR
+              value: ":{{ .Values.service.port }}"
+            - name: MCP_HTTP_PATH
+              value: {{ .Values.mcp.httpPath | quote }}
+            - name: MCP_ALLOW_UNAUTHENTICATED
+              value: {{ .Values.mcp.allowUnauthenticated | quote }}
+            - name: HTTP_HEALTH_ADDR
+              value: ":{{ .Values.service.healthPort }}"
+            - name: LOG_LEVEL
+              value: {{ .Values.logging.level | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.logging.format | quote }}
+            {{- if eq .Values.jira.authMode "cloud" }}
+            - name: JIRA_AUTH_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jiramcp.secretName" . }}
+                  key: {{ .Values.jira.secretKeys.authEmail }}
+            - name: JIRA_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jiramcp.secretName" . }}
+                  key: {{ .Values.jira.secretKeys.apiToken }}
+            {{- else }}
+            - name: JIRA_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jiramcp.secretName" . }}
+                  key: {{ .Values.jira.secretKeys.pat }}
+            {{- end }}
+            {{- if and (eq .Values.mcp.transport "http") (not .Values.mcp.allowUnauthenticated) }}
+            - name: MCP_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jiramcp.secretName" . }}
+                  key: {{ .Values.mcp.authTokenKey }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 2
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: team-mapping
+              mountPath: /etc/jiramcp
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: team-mapping
+          configMap:
+            name: {{ include "jiramcp.fullname" . }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

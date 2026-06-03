@@ -1,0 +1,22 @@
+# Team -> project routing for jiramcp (YAML).
+# Loaded via JIRA_TEAM_MAPPING_FILE (path) or JIRA_TEAM_MAPPING_YAML (inline).
+# Unknown keys are rejected, so keep to the documented fields.
+teams:
+  payments:
+    projectKey: PAY              # required: Jira project key
+    defaultIssueType: Task       # overrides the global default for this team
+    components: [backend, billing]
+    labels: [from-mcp, team-payments]
+    fields:                      # required custom fields, keyed by Jira field id
+      customfield_10010: { value: Payments }
+      customfield_10021: [{ value: PCI }]
+  platform:
+    projectKey: PLAT
+    defaultIssueType: Task
+    labels: [from-mcp]
+  mobile:
+    projectKey: MOB
+    defaultIssueType: Bug
+    components: [ios, android]
+
+defaultTeam: platform            # used when neither team nor project is given

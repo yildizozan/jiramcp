@@ -1,0 +1,15 @@
+apiVersion: v2
+name: jiramcp
+description: MCP server that creates Jira tickets on behalf of a named person for a team
+type: application
+version: 0.3.0
+appVersion: "0.3.0"
+keywords:
+  - mcp
+  - jira
+  - model-context-protocol
+home: https://github.com/acme/jiramcp
+sources:
+  - https://github.com/acme/jiramcp
+maintainers:
+  - name: platform-team

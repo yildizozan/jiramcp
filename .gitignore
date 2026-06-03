@@ -1,0 +1,10 @@
+/bin/
+*.test
+*.out
+coverage*
+.env
+.env.*
+.review/
+.DS_Store
+.idea/
+.claude/

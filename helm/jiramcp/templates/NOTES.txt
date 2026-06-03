@@ -1,0 +1,24 @@
+jiramcp {{ .Chart.AppVersion }} deployed as {{ include "jiramcp.fullname" . }}.
+
+Transport:        {{ .Values.mcp.transport }}
+Jira base URL:    {{ .Values.jira.baseUrl }}
+Auth mode:        {{ .Values.jira.authMode }}
+HTTP MCP path:    {{ .Values.mcp.httpPath }}
+Authenticated:    {{ not .Values.mcp.allowUnauthenticated }}
+
+In-cluster MCP endpoint:
+  http://{{ include "jiramcp.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}{{ .Values.mcp.httpPath }}
+
+Smoke test from a debug pod (replace $TOKEN with the MCP bearer token):
+  curl -sS -X POST \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    http://{{ include "jiramcp.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}{{ .Values.mcp.httpPath }} \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+{{- if .Values.mcp.allowUnauthenticated }}
+
+WARNING: mcp.allowUnauthenticated=true — the MCP endpoint has NO authentication.
+Use this only for local development; never expose it in a shared cluster.
+{{- end }}

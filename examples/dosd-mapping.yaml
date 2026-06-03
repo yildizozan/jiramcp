@@ -1,0 +1,14 @@
+# Real Acme DC mapping: DOSD (DevOps Service Desk) and DPS (Devops).
+# DOSD is a Service Desk with no "Task" type -> default "Service Request".
+# DPS has standard types -> default "Task".
+teams:
+  dosd:
+    projectKey: DOSD
+    defaultIssueType: Service Request
+    labels: [jiramcp]
+  dps:
+    projectKey: DPS
+    defaultIssueType: Task
+    labels: [jiramcp]
+
+defaultTeam: dosd

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "jiramcp.fullname" . }}
+  labels:
+    {{- include "jiramcp.labels" . | nindent 4 }}
+data:
+  team-mapping.yaml: |
+{{ .Values.teamMapping.inlineYaml | indent 4 }}
