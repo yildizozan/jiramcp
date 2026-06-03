@@ -39,6 +39,18 @@ MCP_TRANSPORT=stdio JIRA_TEAM_MAPPING_FILE=examples/dosd-mapping.yaml \
 ./bin/jiramcp
 ```
 
+## Git
+
+**Commit after every change.** Make a focused commit for each logical change as
+soon as it builds and tests pass (`gofmt -l` empty, `go vet ./...`, `go test ./...
+-race`) — do not batch several unrelated edits into one commit or leave finished
+work uncommitted. One change = one commit, with a message explaining the *why*.
+End commit messages with:
+
+```
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+```
+
 ## Layout
 
 ```
