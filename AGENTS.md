@@ -34,7 +34,7 @@ unquoted `$var` — use a zsh array or `${=var}` when looping over a file list.
 Run locally over stdio against a real Jira:
 
 ```sh
-JIRA_BASE_URL=https://jira.example.com JIRA_AUTH_MODE=dc JIRA_PAT=*** \
+JIRA_BASE_URL=https://jira.yildizozan.com JIRA_AUTH_MODE=dc JIRA_PAT=*** \
 MCP_TRANSPORT=stdio JIRA_TEAM_MAPPING_FILE=examples/dosd-mapping.yaml \
 ./bin/jiramcp
 ```
@@ -61,7 +61,7 @@ internal/mcpserver/       MCP server, tools, transports, auth middleware
 internal/health/          cached liveness/readiness
 helm/jiramcp/             Helm chart (chart is at repo root, not under deploy/)
 examples/                 *.yaml team-mapping examples
-mcp.values.yaml           real deploy values (namespace mcp, host jiramcp.example.com)
+mcp.values.yaml           real deploy values (namespace mcp, host jiramcp.yildizozan.com)
 ```
 
 ## Tools (7)

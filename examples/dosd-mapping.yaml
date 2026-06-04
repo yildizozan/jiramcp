@@ -1,4 +1,4 @@
-# Real Acme DC mapping: DOSD (DevOps Service Desk) and DPS (Devops).
+# Example Jira DC team mapping: DOSD (a Service Desk) and DPS.
 # DOSD is a Service Desk with no "Task" type -> default "Service Request".
 # DPS has standard types -> default "Task".
 teams:

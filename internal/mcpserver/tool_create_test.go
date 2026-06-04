@@ -51,7 +51,7 @@ func (f *fakeClient) CreateIssue(_ context.Context, in jira.CreateIssueInput) (*
 		return nil, f.createErr
 	}
 	f.created = &in
-	return &jira.CreatedIssue{ID: "1000", Key: in.ProjectKey + "-123", URL: "https://acme.atlassian.net/browse/" + in.ProjectKey + "-123"}, nil
+	return &jira.CreatedIssue{ID: "1000", Key: in.ProjectKey + "-123", URL: "https://jira.yildizozan.com/browse/" + in.ProjectKey + "-123"}, nil
 }
 func (f *fakeClient) UpdateIssue(_ context.Context, key string, in jira.UpdateIssueInput) error {
 	f.updatedKey = key
@@ -69,7 +69,7 @@ func (f *fakeClient) TransitionIssue(_ context.Context, _, transitionID, _ strin
 	f.appliedID = transitionID
 	return nil
 }
-func (f *fakeClient) BrowseURL(key string) string { return "https://acme.example/browse/" + key }
+func (f *fakeClient) BrowseURL(key string) string { return "https://jira.yildizozan.com/browse/" + key }
 
 func testCfg() *config.Config {
 	return &config.Config{
@@ -112,7 +112,7 @@ func newServer(f jira.Client, cfg *config.Config) *Server {
 
 func TestCreate_HappyPath(t *testing.T) {
 	f := &fakeClient{
-		users:      []jira.User{{AccountID: "acc-1", DisplayName: "Alice", Email: "alice@acme.com", Active: true}},
+		users:      []jira.User{{AccountID: "acc-1", DisplayName: "Alice", Email: "alice@yildizozan.com", Active: true}},
 		issueTypes: []jira.IssueType{{ID: "10001", Name: "Task"}},
 		meta:       metaWith("summary", "project", "issuetype", "reporter", "description", "labels"),
 	}
@@ -120,7 +120,7 @@ func TestCreate_HappyPath(t *testing.T) {
 
 	res, err := srv.handleCreateTicket(context.Background(), newReq(map[string]any{
 		"summary":     "Fix login",
-		"reporter":    "alice@acme.com",
+		"reporter":    "alice@yildizozan.com",
 		"team":        "payments",
 		"description": "It is broken",
 	}))

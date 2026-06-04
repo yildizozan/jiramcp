@@ -8,8 +8,8 @@ keywords:
   - mcp
   - jira
   - model-context-protocol
-home: https://github.com/acme/jiramcp
+home: https://github.com/yildizozan/jiramcp
 sources:
-  - https://github.com/acme/jiramcp
+  - https://github.com/yildizozan/jiramcp
 maintainers:
   - name: platform-team

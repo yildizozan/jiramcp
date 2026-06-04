@@ -30,7 +30,7 @@ func get(t *testing.T, c *Checker, path string) *httptest.ResponseRecorder {
 // /readyz must not leak the upstream (Jira) error detail to its unauthenticated
 // caller; the body is generic and the cause is logged server-side only.
 func TestReadyz_NotReadyIsGenericAndDoesNotLeak(t *testing.T) {
-	upstream := `Get "https://jira.internal/rest/api/2/myself": dial tcp 10.0.0.5:443: connect: connection refused`
+	upstream := `Get "https://jira.yildizozan.com/rest/api/2/myself": dial tcp 10.0.0.5:443: connect: connection refused`
 	c := testChecker(errors.New(upstream))
 	c.refresh(context.Background()) // probe fails -> not ready
 
@@ -42,7 +42,7 @@ func TestReadyz_NotReadyIsGenericAndDoesNotLeak(t *testing.T) {
 	if !strings.Contains(body, "not ready") {
 		t.Fatalf("expected status \"not ready\", got %s", body)
 	}
-	for _, leak := range []string{"jira.internal", "10.0.0.5", "connection refused", "rest/api", "myself"} {
+	for _, leak := range []string{"jira.yildizozan.com", "10.0.0.5", "connection refused", "rest/api", "myself"} {
 		if strings.Contains(body, leak) {
 			t.Fatalf("/readyz leaked upstream detail %q: %s", leak, body)
 		}

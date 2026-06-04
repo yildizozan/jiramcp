@@ -16,7 +16,7 @@ fullnameOverride: ""
 # Jira connection
 # ---------------------------------------------------------------------------
 jira:
-  baseUrl: ""                 # e.g. https://acme.atlassian.net  (REQUIRED)
+  baseUrl: ""                 # e.g. https://jira.yildizozan.com  (REQUIRED)
   authMode: cloud             # cloud (email+token) | dc (PAT)
   defaultIssueType: Task
   httpTimeout: 15s
@@ -74,7 +74,7 @@ ingress:
   className: ""
   annotations: {}
   hosts:
-    - host: jiramcp.example.com
+    - host: jiramcp.yildizozan.com
       paths:
         - path: /mcp
           pathType: Prefix

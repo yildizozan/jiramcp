@@ -1,5 +1,5 @@
 GO            ?= go
-IMAGE         ?= ghcr.io/acme/jiramcp
+IMAGE         ?= docker.io/yildizozan/jiramcp
 VERSION       ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 HELM_CHART    ?= helm/jiramcp
 
@@ -30,8 +30,8 @@ helm-lint:
 
 helm-template:
 	helm template jiramcp $(HELM_CHART) \
-		--set jira.baseUrl=https://acme.atlassian.net \
-		--set jira.secret.authEmail=svc@acme.com \
+		--set jira.baseUrl=https://jira.yildizozan.com \
+		--set jira.secret.authEmail=svc@yildizozan.com \
 		--set jira.secret.apiToken=token \
 		--set mcp.authToken=mcp-secret
 

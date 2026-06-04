@@ -42,7 +42,7 @@ accountId, or email/name resolved to exactly one active user), `team` and/or
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `JIRA_BASE_URL` | yes | — | e.g. `https://acme.atlassian.net` |
+| `JIRA_BASE_URL` | yes | — | e.g. `https://jira.yildizozan.com` |
 | `JIRA_AUTH_MODE` | no | inferred | `cloud` or `dc`; inferred `dc` when `JIRA_PAT` is set |
 | `JIRA_AUTH_EMAIL` | cloud | — | Service-account email |
 | `JIRA_API_TOKEN` | cloud | — | Service-account API token |
@@ -84,8 +84,8 @@ superset of JSON, so an inline JSON document is still accepted.
 
 ```bash
 make build
-JIRA_BASE_URL=https://acme.atlassian.net \
-JIRA_AUTH_EMAIL=svc@acme.com JIRA_API_TOKEN=*** \
+JIRA_BASE_URL=https://jira.yildizozan.com \
+JIRA_AUTH_EMAIL=svc@yildizozan.com JIRA_API_TOKEN=*** \
 MCP_TRANSPORT=stdio \
 JIRA_TEAM_MAPPING_FILE=examples/team-mapping.yaml \
 ./bin/jiramcp
@@ -98,7 +98,7 @@ In `http` mode the server requires `MCP_AUTH_TOKEN` (or set
 ## Container
 
 ```bash
-make docker IMAGE=ghcr.io/acme/jiramcp VERSION=0.1.0
+make docker IMAGE=docker.io/yildizozan/jiramcp VERSION=0.1.0
 ```
 
 Multi-stage build (Chainguard `cgr.dev/chainguard/go` → `cgr.dev/chainguard/static`),
@@ -108,7 +108,7 @@ static `CGO_ENABLED=0` binary, runs as UID 65532.
 
 ```bash
 helm install jiramcp helm/jiramcp \
-  --set jira.baseUrl=https://acme.atlassian.net \
+  --set jira.baseUrl=https://jira.yildizozan.com \
   --set jira.existingSecret=jiramcp-credentials \
   --set-file teamMapping.inlineYaml=examples/team-mapping.yaml
 ```

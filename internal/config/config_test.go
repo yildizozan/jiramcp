@@ -5,8 +5,8 @@ import (
 )
 
 func TestLoad_CloudHappyPath(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://acme.atlassian.net/")
-	t.Setenv("JIRA_AUTH_EMAIL", "svc@acme.com")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com/")
+	t.Setenv("JIRA_AUTH_EMAIL", "svc@yildizozan.com")
 	t.Setenv("JIRA_API_TOKEN", "tok")
 	t.Setenv("MCP_AUTH_TOKEN", "secret")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"Payments":{"projectKey":"PAY"}},"defaultTeam":"Payments"}`)
@@ -18,7 +18,7 @@ func TestLoad_CloudHappyPath(t *testing.T) {
 	if cfg.AuthMode != AuthCloud {
 		t.Fatalf("authMode: %s", cfg.AuthMode)
 	}
-	if cfg.BaseURL != "https://acme.atlassian.net" {
+	if cfg.BaseURL != "https://jira.yildizozan.com" {
 		t.Fatalf("baseURL not trimmed: %s", cfg.BaseURL)
 	}
 	if _, ok := cfg.Teams.Lookup("payments"); !ok {
@@ -30,7 +30,7 @@ func TestLoad_CloudHappyPath(t *testing.T) {
 }
 
 func TestLoad_NativeYAMLMapping(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://jira.acme.internal")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
 	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `
@@ -55,7 +55,7 @@ defaultTeam: dosd
 }
 
 func TestLoad_RejectsUnknownMappingField(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://jira.acme.internal")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
 	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", "teams:\n  p:\n    projectKey: P\n    bogus: x\n")
@@ -65,7 +65,7 @@ func TestLoad_RejectsUnknownMappingField(t *testing.T) {
 }
 
 func TestLoad_RejectsReservedFieldOverride(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://jira.acme.internal")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
 	t.Setenv("MCP_TRANSPORT", "stdio")
 	// A mapping must not set core fields (here `project`) via team `fields`.
@@ -76,7 +76,7 @@ func TestLoad_RejectsReservedFieldOverride(t *testing.T) {
 }
 
 func TestLoad_RejectsDuplicateNormalizedTeam(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://jira.acme.internal")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
 	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", "teams:\n  DOSD:\n    projectKey: DOSD\n  dosd:\n    projectKey: DPS\n")
@@ -86,7 +86,7 @@ func TestLoad_RejectsDuplicateNormalizedTeam(t *testing.T) {
 }
 
 func TestLoad_RejectsDuplicateProjectKey(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://jira.acme.internal")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
 	t.Setenv("MCP_TRANSPORT", "stdio")
 	// Two teams routing to the same project (case-insensitively) is rejected so
@@ -98,8 +98,8 @@ func TestLoad_RejectsDuplicateProjectKey(t *testing.T) {
 }
 
 func TestLoad_RequiresAuthTokenForHTTP(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://acme.atlassian.net")
-	t.Setenv("JIRA_AUTH_EMAIL", "svc@acme.com")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
+	t.Setenv("JIRA_AUTH_EMAIL", "svc@yildizozan.com")
 	t.Setenv("JIRA_API_TOKEN", "tok")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"p":{"projectKey":"P"}}}`)
 	// No MCP_AUTH_TOKEN and not allowing unauthenticated => error.
@@ -109,7 +109,7 @@ func TestLoad_RequiresAuthTokenForHTTP(t *testing.T) {
 }
 
 func TestLoad_PATInfersDC(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://jira.acme.internal")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
 	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"p":{"projectKey":"P"}}}`)
@@ -133,7 +133,7 @@ func TestLoad_RejectsBadBaseURL(t *testing.T) {
 }
 
 func TestLoad_DefaultTeamMustExist(t *testing.T) {
-	t.Setenv("JIRA_BASE_URL", "https://acme.atlassian.net")
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
 	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"p":{"projectKey":"P"}},"defaultTeam":"ghost"}`)

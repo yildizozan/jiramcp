@@ -41,7 +41,7 @@ func newServer(t *testing.T, status int, respBody string, cap *capture) *httptes
 
 func dcClient(url string) *Cloud { return NewCloud(url, "dc", "", "", "pat-123", 5*time.Second) }
 func cloudClient(url string) *Cloud {
-	return NewCloud(url, "cloud", "svc@acme.com", "tok", "", 5*time.Second)
+	return NewCloud(url, "cloud", "svc@yildizozan.com", "tok", "", 5*time.Second)
 }
 
 // The bug the live review caught: CreateIssue must honor the API version, not
