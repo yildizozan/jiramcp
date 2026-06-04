@@ -56,7 +56,7 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - name: mcp
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ .Values.service.containerPort }}
               protocol: TCP
             - name: health
               containerPort: {{ .Values.service.healthPort }}
@@ -75,7 +75,7 @@ spec:
             - name: MCP_TRANSPORT
               value: {{ .Values.mcp.transport | quote }}
             - name: MCP_HTTP_ADDR
-              value: ":{{ .Values.service.port }}"
+              value: ":{{ .Values.service.containerPort }}"
             - name: MCP_HTTP_PATH
               value: {{ .Values.mcp.httpPath | quote }}
             - name: MCP_ALLOW_UNAUTHENTICATED

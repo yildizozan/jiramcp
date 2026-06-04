@@ -65,8 +65,13 @@ logging:
 
 service:
   type: ClusterIP
-  port: 8080
+  # Exposed MCP service port. 80 lets clients use a portless in-cluster URL
+  # (http://<name>.<ns>.svc/mcp); the Service routes it to the pod's containerPort.
+  port: 80
   healthPort: 8081
+  # Port the app binds inside the container. Kept >=1024 because the container
+  # runs as nonroot with all capabilities dropped and cannot bind :80.
+  containerPort: 8080
   annotations: {}
 
 ingress:
