@@ -65,37 +65,6 @@ func (s *Server) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest
 		fmt.Sprintf("Updated %s: %s", key, url)), nil
 }
 
-// addCommentTool appends a comment to an existing issue.
-func addCommentTool() mcp.Tool {
-	return mcp.NewTool("add_comment",
-		mcp.WithDescription("Add a comment to an existing Jira issue."),
-		mcp.WithString("key", mcp.Required(), mcp.Description("Issue key, e.g. DOSD-1036.")),
-		mcp.WithString("body", mcp.Required(), mcp.Description("Comment text (plain text; converted to ADF on Cloud)."), mcp.MaxLength(32000)),
-	)
-}
-
-func (s *Server) handleAddComment(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	key, err := req.RequireString("key")
-	if err != nil {
-		return mcp.NewToolResultError("key is required"), nil
-	}
-	if err := s.requireMappedIssue(key); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	body, err := req.RequireString("body")
-	if err != nil {
-		return mcp.NewToolResultError("body is required"), nil
-	}
-	c, err := s.client.AddComment(ctx, key, body)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-	s.logger.Info("comment added", "key", key, "commentId", c.ID)
-	return mcp.NewToolResultStructured(
-		map[string]any{"key": key, "commentId": c.ID, "url": c.URL},
-		fmt.Sprintf("Commented on %s: %s", key, c.URL)), nil
-}
-
 // transitionTool lists or applies a workflow transition.
 func transitionTool() mcp.Tool {
 	return mcp.NewTool("transition_jira_ticket",

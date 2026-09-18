@@ -48,6 +48,8 @@ func New(cfg *config.Config, client jira.Client, logger *slog.Logger) *Server {
 	s.mcp.AddTool(createTicketTool(), s.handleCreateTicket)
 	s.mcp.AddTool(updateTicketTool(), s.handleUpdateTicket)
 	s.mcp.AddTool(addCommentTool(), s.handleAddComment)
+	s.mcp.AddTool(listCommentsTool(), s.handleListComments)
+	s.mcp.AddTool(updateCommentTool(), s.handleUpdateComment)
 	s.mcp.AddTool(transitionTool(), s.handleTransition)
 	s.mcp.AddTool(searchUsersTool(), s.handleSearchUsers)
 	s.mcp.AddTool(listProjectsTool(), s.handleListProjects)
