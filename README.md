@@ -28,6 +28,8 @@ as the service account.
 | `create_jira_ticket` | Create a ticket for a `team` (or explicit `project`) with `reporter` set to a named person. |
 | `update_jira_ticket` | Edit fields (summary, description, assignee, priority, labels, components, due date) on an existing issue. |
 | `add_comment` | Add a comment to an existing issue. |
+| `list_comments` | List the newest comments on an issue (oldest first), with the `id` needed to edit one. |
+| `update_comment` | Replace the body of an existing comment, by `comment_id`. |
 | `transition_jira_ticket` | List the available workflow transitions for an issue, or apply one (optionally with a comment). |
 | `search_users` | Resolve a name/email to the reporter/assignee id (accountId on Cloud, username on Server/DC). |
 | `list_projects` | List projects reachable by the service account. |
@@ -133,8 +135,13 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
 - Credentials are only ever read from the environment (injected from a Secret);
   they are never logged (the startup config dump is redacted).
 - The team mapping is the authorization boundary for every issue operation:
-  `create` only targets mapped projects, and `update`/`add_comment`/`transition`
-  reject any issue key whose project is not in the mapping.
+  `create` only targets mapped projects, and `update`/`add_comment`/
+  `list_comments`/`update_comment`/`transition` reject any issue key whose
+  project is not in the mapping.
+- Editing a comment is authorized by Jira alone: the service account can only
+  change what its project permissions allow ('Edit Own Comments' vs 'Edit All
+  Comments'). `update_comment` REPLACES the body, so the previous text is kept
+  only in Jira's own edit history.
 
 ## Development
 

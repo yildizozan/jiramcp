@@ -64,9 +64,10 @@ examples/                 *.yaml team-mapping examples
 mcp.values.yaml           real deploy values (namespace mcp, host jiramcp.yildizozan.com)
 ```
 
-## Tools (7)
+## Tools (9)
 
-`create_jira_ticket`, `update_jira_ticket`, `add_comment`,
+`create_jira_ticket`, `update_jira_ticket`, `add_comment`, `list_comments`,
+`update_comment` (replaces the body; id comes from `list_comments`),
 `transition_jira_ticket` (omit `to` to list, pass `to` to apply),
 `search_users`, `list_projects`, `list_issue_types`.
 
@@ -81,7 +82,12 @@ mcp.values.yaml           real deploy values (namespace mcp, host jiramcp.yildiz
 - **Identity**: `User.Ref()` returns accountId (Cloud) or username (DC). `userRef()` wraps it
   as `{"accountId":…}` (Cloud) or `{"name":…}` (DC). Never expose/accept the DC user `key`
   as a reporter id — it is not valid in the `name` field.
-- **Descriptions/comments**: `renderText()` → ADF on Cloud, plain string on DC.
+- **Descriptions/comments**: `renderText()` → ADF on Cloud, plain string on DC. Reading
+  back goes the other way: a comment body is an ADF tree on Cloud and a string on DC, so
+  it is decoded through `wireComment` + `ADFToText`, never unmarshalled into a `string`.
+- **`ListComments` pages to the END**: Jira returns comments oldest first, so the newest
+  live on the last page. The total is read first and the window requested by offset;
+  `orderBy` is NOT used (Server/DC ignores it and would silently return the oldest).
 - **createmeta on DC FAILS OPEN**: `CreateMeta` returns an error in `dc` mode so the
   reporter is never blocked by a metadata pre-check (DC createmeta is unreliable; verified
   broken on the target). Validation is best-effort and skipped on error.
