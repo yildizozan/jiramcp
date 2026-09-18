@@ -327,3 +327,124 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// ListComments must page to the END of the comment list (newest comments are
+// last) and must decode both body dialects.
+func TestListComments_DC_OffsetAndPlainBody(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"total":50,"comments":[
+		{"id":"9001","body":"plain text","author":{"displayName":"Ozan"},"created":"2026-09-18T10:00:00.000+0300","updated":"2026-09-18T10:00:00.000+0300"}]}`, &cap)
+	c := dcClient(srv.URL)
+
+	got, err := c.ListComments(context.Background(), "DOSD-1", 20)
+	if err != nil {
+		t.Fatalf("list comments: %v", err)
+	}
+	if cap.method != "GET" || cap.path != "/rest/api/2/issue/DOSD-1/comment" {
+		t.Fatalf("DC list path: %s %s", cap.method, cap.path)
+	}
+	// total=50, limit=20 -> the window must start at 30, not 0.
+	if cap.rawQ != "maxResults=20&startAt=30" {
+		t.Fatalf("expected the last page to be requested, got query %q", cap.rawQ)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 comment, got %d", len(got))
+	}
+	if got[0].Body != "plain text" || got[0].Author != "Ozan" || got[0].ID != "9001" {
+		t.Fatalf("unexpected comment: %+v", got[0])
+	}
+	if got[0].URL != srv.URL+"/browse/DOSD-1" {
+		t.Fatalf("comment URL should point at the issue, got %q", got[0].URL)
+	}
+}
+
+func TestListComments_Cloud_ADFBody(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"total":1,"comments":[
+		{"id":"9002","body":{"type":"doc","version":1,"content":[
+			{"type":"paragraph","content":[{"type":"text","text":"from cloud"}]}]},
+		 "author":{"displayName":"Jane"}}]}`, &cap)
+
+	got, err := cloudClient(srv.URL).ListComments(context.Background(), "DOSD-1", 5)
+	if err != nil {
+		t.Fatalf("list comments: %v", err)
+	}
+	if cap.path != "/rest/api/3/issue/DOSD-1/comment" {
+		t.Fatalf("cloud list must use v3, got %q", cap.path)
+	}
+	if len(got) != 1 || got[0].Body != "from cloud" {
+		t.Fatalf("ADF body not flattened: %+v", got)
+	}
+}
+
+func TestListComments_Empty_SkipsSecondRequest(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"total":0,"comments":[]}`, &cap)
+
+	got, err := dcClient(srv.URL).ListComments(context.Background(), "DOSD-1", 20)
+	if err != nil {
+		t.Fatalf("list comments: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected no comments, got %+v", got)
+	}
+	if cap.rawQ != "maxResults=0" {
+		t.Fatalf("only the count request should have been sent, last query was %q", cap.rawQ)
+	}
+}
+
+func TestUpdateComment_DC_PathAndPlainBody(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"id":"9001","body":"edited","author":{"displayName":"Ozan"}}`, &cap)
+
+	got, err := dcClient(srv.URL).UpdateComment(context.Background(), "DOSD-1", "9001", "edited")
+	if err != nil {
+		t.Fatalf("update comment: %v", err)
+	}
+	if cap.method != "PUT" || cap.path != "/rest/api/2/issue/DOSD-1/comment/9001" {
+		t.Fatalf("DC update path: %s %s", cap.method, cap.path)
+	}
+	if cap.xsrf != "no-check" {
+		t.Fatalf("mutating DC request must send X-Atlassian-Token: no-check, got %q", cap.xsrf)
+	}
+	if cap.body["body"] != "edited" {
+		t.Fatalf("DC body must be a plain string, got %#v", cap.body["body"])
+	}
+	if got.ID != "9001" || got.Body != "edited" {
+		t.Fatalf("unexpected comment: %+v", got)
+	}
+}
+
+func TestUpdateComment_Cloud_ADFBody(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"id":"9002","body":{"type":"doc","version":1,"content":[
+		{"type":"paragraph","content":[{"type":"text","text":"edited"}]}]}}`, &cap)
+
+	got, err := cloudClient(srv.URL).UpdateComment(context.Background(), "DOSD-1", "9002", "edited")
+	if err != nil {
+		t.Fatalf("update comment: %v", err)
+	}
+	if cap.path != "/rest/api/3/issue/DOSD-1/comment/9002" {
+		t.Fatalf("cloud update must use v3, got %q", cap.path)
+	}
+	doc, ok := cap.body["body"].(map[string]any)
+	if !ok || doc["type"] != "doc" {
+		t.Fatalf("cloud body must be an ADF document, got %#v", cap.body["body"])
+	}
+	if got.Body != "edited" {
+		t.Fatalf("response body not flattened: %+v", got)
+	}
+}
+
+func TestUpdateComment_PermissionDeniedSurfaces(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 403, `{"errorMessages":["You do not have permission to edit this comment."],"errors":{}}`, &cap)
+
+	_, err := dcClient(srv.URL).UpdateComment(context.Background(), "DOSD-1", "9001", "edited")
+	if err == nil {
+		t.Fatal("expected an error for HTTP 403")
+	}
+	if !contains(err.Error(), "permission denied") || !contains(err.Error(), "update comment") {
+		t.Fatalf("403 should surface as an actionable permission error, got %q", err.Error())
+	}
+}

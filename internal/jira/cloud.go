@@ -397,6 +397,50 @@ func (c *Cloud) UpdateIssue(ctx context.Context, key string, in UpdateIssueInput
 	return err
 }
 
+// wireComment is the on-the-wire shape of a Jira comment. Body is deferred
+// because the dialects disagree on its type: a JSON string on Server/DC, an ADF
+// object on Cloud.
+type wireComment struct {
+	ID     string          `json:"id"`
+	Body   json.RawMessage `json:"body"`
+	Author struct {
+		DisplayName string `json:"displayName"`
+	} `json:"author"`
+	Created string `json:"created"`
+	Updated string `json:"updated"`
+}
+
+// toComment converts a decoded wire comment into the exported form, flattening
+// a Cloud ADF body to plain text.
+func (c *Cloud) toComment(w wireComment, key string) Comment {
+	return Comment{
+		ID:      w.ID,
+		Body:    decodeCommentBody(w.Body),
+		Author:  w.Author.DisplayName,
+		Created: w.Created,
+		Updated: w.Updated,
+		URL:     c.browseURL(key),
+	}
+}
+
+// decodeCommentBody renders a raw comment body as plain text, accepting either
+// dialect's representation. An unrecognized shape yields an empty string rather
+// than an error: a comment we cannot render is still worth listing by id.
+func decodeCommentBody(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return ""
+	}
+	return ADFToText(doc)
+}
+
 // AddComment implements Client.
 func (c *Cloud) AddComment(ctx context.Context, key, body string) (*Comment, error) {
 	data, err := c.do(ctx, "add comment", http.MethodPost,
@@ -405,11 +449,77 @@ func (c *Cloud) AddComment(ctx context.Context, key, body string) (*Comment, err
 	if err != nil {
 		return nil, err
 	}
-	var out Comment
-	if err := json.Unmarshal(data, &out); err != nil {
+	var w wireComment
+	if err := json.Unmarshal(data, &w); err != nil {
 		return nil, fmt.Errorf("decoding comment response: %w", err)
 	}
-	out.URL = c.browseURL(key)
+	out := c.toComment(w, key)
+	return &out, nil
+}
+
+// ListComments implements Client. Jira paginates comments oldest first, so the
+// newest ones are the LAST page: the count is read first and the window is
+// requested by offset. That costs one extra cheap request but is deterministic
+// on both dialects, unlike `orderBy`, which Server/DC does not honor reliably.
+func (c *Cloud) ListComments(ctx context.Context, key string, limit int) ([]Comment, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	path := c.api("/issue/" + url.PathEscape(key) + "/comment")
+
+	count := url.Values{}
+	count.Set("maxResults", "0")
+	data, err := c.do(ctx, "list comments", http.MethodGet, path, count, nil)
+	if err != nil {
+		return nil, err
+	}
+	var head struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(data, &head); err != nil {
+		return nil, fmt.Errorf("decoding comment count: %w", err)
+	}
+	if head.Total == 0 {
+		return nil, nil
+	}
+
+	start := head.Total - limit
+	if start < 0 {
+		start = 0
+	}
+	q := url.Values{}
+	q.Set("startAt", strconv.Itoa(start))
+	q.Set("maxResults", strconv.Itoa(limit))
+	data, err = c.do(ctx, "list comments", http.MethodGet, path, q, nil)
+	if err != nil {
+		return nil, err
+	}
+	var page struct {
+		Comments []wireComment `json:"comments"`
+	}
+	if err := json.Unmarshal(data, &page); err != nil {
+		return nil, fmt.Errorf("decoding comments: %w", err)
+	}
+	out := make([]Comment, 0, len(page.Comments))
+	for _, w := range page.Comments {
+		out = append(out, c.toComment(w, key))
+	}
+	return out, nil
+}
+
+// UpdateComment implements Client. The body is REPLACED, not appended to.
+func (c *Cloud) UpdateComment(ctx context.Context, key, commentID, body string) (*Comment, error) {
+	data, err := c.do(ctx, "update comment", http.MethodPut,
+		c.api("/issue/"+url.PathEscape(key)+"/comment/"+url.PathEscape(commentID)), nil,
+		map[string]any{"body": c.renderText(body)})
+	if err != nil {
+		return nil, err
+	}
+	var w wireComment
+	if err := json.Unmarshal(data, &w); err != nil {
+		return nil, fmt.Errorf("decoding comment response: %w", err)
+	}
+	out := c.toComment(w, key)
 	return &out, nil
 }
 

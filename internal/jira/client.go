@@ -134,10 +134,17 @@ func (in UpdateIssueInput) HasChanges() bool {
 		in.DueDate != "" || len(in.ExtraFields) > 0
 }
 
-// Comment is a created comment.
+// Comment is a comment on an issue. Body is always plain text: the Cloud v3
+// API returns an ADF tree, which the client flattens, while Server/DC returns
+// the raw string. Author, Created and Updated are only populated when reading
+// comments; a create/edit response fills whatever Jira echoes back.
 type Comment struct {
-	ID  string `json:"id"`
-	URL string `json:"-"` // browse URL of the parent issue
+	ID      string `json:"id"`
+	Body    string `json:"body"`
+	Author  string `json:"author"`  // display name
+	Created string `json:"created"` // Jira timestamp, as returned
+	Updated string `json:"updated"` // Jira timestamp, as returned
+	URL     string `json:"-"`       // browse URL of the parent issue
 }
 
 // Transition is an available workflow transition for an issue.
@@ -165,6 +172,11 @@ type Client interface {
 	UpdateIssue(ctx context.Context, key string, in UpdateIssueInput) error
 	// AddComment appends a comment to an existing issue.
 	AddComment(ctx context.Context, key, body string) (*Comment, error)
+	// ListComments returns the most recent comments on an issue, oldest first,
+	// capped at limit.
+	ListComments(ctx context.Context, key string, limit int) ([]Comment, error)
+	// UpdateComment replaces the body of an existing comment.
+	UpdateComment(ctx context.Context, key, commentID, body string) (*Comment, error)
 	// Transitions lists the workflow transitions currently available for an issue.
 	Transitions(ctx context.Context, key string) ([]Transition, error)
 	// TransitionIssue applies a transition, optionally with a comment.

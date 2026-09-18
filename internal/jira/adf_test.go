@@ -35,3 +35,42 @@ func TestTextToADF_Structure(t *testing.T) {
 		t.Fatalf("adf not json-serializable: %v", err)
 	}
 }
+
+func TestADFToText_RoundTrip(t *testing.T) {
+	const text = "first line\n\nthird line"
+	if got := ADFToText(TextToADF(text)); got != text {
+		t.Fatalf("round trip lost content: %q != %q", got, text)
+	}
+}
+
+func TestADFToText_NestedAndUnknownNodes(t *testing.T) {
+	doc := map[string]any{
+		"type":    "doc",
+		"version": 1,
+		"content": []any{
+			map[string]any{"type": "paragraph", "content": []any{
+				map[string]any{"type": "text", "text": "bold", "marks": []any{map[string]any{"type": "strong"}}},
+				map[string]any{"type": "hardBreak"},
+				map[string]any{"type": "text", "text": "after break"},
+			}},
+			// A node type we do not model still contributes its nested text.
+			map[string]any{"type": "bulletList", "content": []any{
+				map[string]any{"type": "listItem", "content": []any{
+					map[string]any{"type": "paragraph", "content": []any{
+						map[string]any{"type": "text", "text": "item"},
+					}},
+				}},
+			}},
+		},
+	}
+	want := "bold\nafter break\nitem"
+	if got := ADFToText(doc); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestADFToText_Malformed(t *testing.T) {
+	if got := ADFToText(map[string]any{"type": "doc"}); got != "" {
+		t.Fatalf("expected empty string for a doc with no content, got %q", got)
+	}
+}

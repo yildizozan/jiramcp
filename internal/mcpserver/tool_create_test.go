@@ -27,6 +27,14 @@ type fakeClient struct {
 	updatedKey  string
 	updated     *jira.UpdateIssueInput
 	commentBody string
+
+	comments        []jira.Comment
+	listedLimit     int
+	listErr         error
+	editedCommentID string
+	editedBody      string
+	editErr         error
+
 	transitions []jira.Transition
 	appliedID   string
 }
@@ -61,6 +69,18 @@ func (f *fakeClient) UpdateIssue(_ context.Context, key string, in jira.UpdateIs
 func (f *fakeClient) AddComment(_ context.Context, key, body string) (*jira.Comment, error) {
 	f.commentBody = body
 	return &jira.Comment{ID: "9001", URL: f.BrowseURL(key)}, nil
+}
+func (f *fakeClient) ListComments(_ context.Context, _ string, limit int) ([]jira.Comment, error) {
+	f.listedLimit = limit
+	return f.comments, f.listErr
+}
+func (f *fakeClient) UpdateComment(_ context.Context, key, commentID, body string) (*jira.Comment, error) {
+	if f.editErr != nil {
+		return nil, f.editErr
+	}
+	f.editedCommentID = commentID
+	f.editedBody = body
+	return &jira.Comment{ID: commentID, Body: body, URL: f.BrowseURL(key)}, nil
 }
 func (f *fakeClient) Transitions(context.Context, string) ([]jira.Transition, error) {
 	return f.transitions, nil

@@ -35,3 +35,43 @@ func TextToADF(text string) map[string]any {
 		"content": content,
 	}
 }
+
+// ADFToText flattens an Atlassian Document Format document back into plain
+// text. It is the counterpart of TextToADF for reading Cloud rich-text fields
+// (comment bodies), which the v3 API returns as an ADF tree rather than a
+// string.
+//
+// The walk is deliberately lossy: only the text content is recovered, marks
+// (bold, links) and node types we do not model (tables, media) contribute their
+// nested text and nothing else. Top-level blocks are separated by newlines and
+// hardBreak nodes become newlines, which round-trips the documents TextToADF
+// produces.
+func ADFToText(doc map[string]any) string {
+	content, _ := doc["content"].([]any)
+	blocks := make([]string, 0, len(content))
+	for _, node := range content {
+		blocks = append(blocks, adfNodeText(node))
+	}
+	return strings.Join(blocks, "\n")
+}
+
+// adfNodeText renders a single ADF node and its descendants to text.
+func adfNodeText(node any) string {
+	n, ok := node.(map[string]any)
+	if !ok {
+		return ""
+	}
+	switch n["type"] {
+	case "text":
+		s, _ := n["text"].(string)
+		return s
+	case "hardBreak":
+		return "\n"
+	}
+	children, _ := n["content"].([]any)
+	var b strings.Builder
+	for _, child := range children {
+		b.WriteString(adfNodeText(child))
+	}
+	return b.String()
+}
