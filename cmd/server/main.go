@@ -30,7 +30,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := newRootCmd().ExecuteContext(ctx); err != nil {
+	if err := newRootCmd(run).ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "fatal:", err)
 		stop()
 		os.Exit(1)
@@ -39,9 +39,11 @@ func main() {
 
 // newRootCmd builds the CLI. The root command serves stdio so `jiramcp` alone
 // works as a local MCP server; `stdio` and `http` pick the transport explicitly.
-func newRootCmd() *cobra.Command {
+// serve is injected so tests can check the transport routing without starting
+// a server.
+func newRootCmd(serve func(context.Context, config.Transport) error) *cobra.Command {
 	serveWith := func(t config.Transport) func(*cobra.Command, []string) error {
-		return func(cmd *cobra.Command, _ []string) error { return run(cmd.Context(), t) }
+		return func(cmd *cobra.Command, _ []string) error { return serve(cmd.Context(), t) }
 	}
 
 	root := &cobra.Command{
