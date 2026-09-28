@@ -17,8 +17,7 @@ import (
 )
 
 const (
-	name    = "jiramcp"
-	version = "0.1.0"
+	name = "jiramcp"
 
 	defaultShutdownTimeout = 10 * time.Second
 )
@@ -32,8 +31,10 @@ type Server struct {
 	mcp    *server.MCPServer
 }
 
-// New builds the MCP server and registers all tools.
-func New(cfg *config.Config, client jira.Client, logger *slog.Logger) *Server {
+// New builds the MCP server and registers all tools. version is reported to
+// clients as serverInfo.version; the binary passes its build version so both
+// `jiramcp --version` and MCP clients see the same value.
+func New(cfg *config.Config, client jira.Client, logger *slog.Logger, version string) *Server {
 	s := &Server{
 		client: client,
 		teams:  cfg.Teams,

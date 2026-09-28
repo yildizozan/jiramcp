@@ -127,7 +127,7 @@ func resultText(r *mcp.CallToolResult) string {
 }
 
 func newServer(f jira.Client, cfg *config.Config) *Server {
-	return New(cfg, f, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(cfg, f, slog.New(slog.NewTextHandler(io.Discard, nil)), "test")
 }
 
 func TestCreate_HappyPath(t *testing.T) {

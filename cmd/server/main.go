@@ -113,7 +113,7 @@ func run(ctx context.Context, transport config.Transport) error {
 		_ = healthSrv.Shutdown(sctx)
 	}()
 
-	srv := mcpserver.New(cfg, client, logger)
+	srv := mcpserver.New(cfg, client, logger, version)
 
 	switch cfg.Transport {
 	case config.TransportStdio:
