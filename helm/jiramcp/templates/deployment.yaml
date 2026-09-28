@@ -52,6 +52,8 @@ spec:
         - name: jiramcp
           image: {{ include "jiramcp.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - {{ .Values.mcp.transport | quote }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
@@ -72,8 +74,6 @@ spec:
               value: {{ .Values.jira.httpTimeout | quote }}
             - name: JIRA_TEAM_MAPPING_FILE
               value: /etc/jiramcp/team-mapping.yaml
-            - name: MCP_TRANSPORT
-              value: {{ .Values.mcp.transport | quote }}
             - name: MCP_HTTP_ADDR
               value: ":{{ .Values.service.containerPort }}"
             - name: MCP_HTTP_PATH

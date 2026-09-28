@@ -50,7 +50,7 @@ teamMapping:
 # MCP server
 # ---------------------------------------------------------------------------
 mcp:
-  transport: http             # http | stdio
+  transport: http             # http | stdio (passed as the container subcommand)
   httpPath: /mcp
   # Bearer token required to call the HTTP endpoint. Strongly recommended.
   # Sourced from the Secret (key MCP_AUTH_TOKEN) like other credentials.

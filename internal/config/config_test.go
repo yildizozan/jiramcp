@@ -11,7 +11,7 @@ func TestLoad_CloudHappyPath(t *testing.T) {
 	t.Setenv("MCP_AUTH_TOKEN", "secret")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"Payments":{"projectKey":"PAY"}},"defaultTeam":"Payments"}`)
 
-	cfg, err := Load()
+	cfg, err := Load(TransportHTTP)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -32,7 +32,6 @@ func TestLoad_CloudHappyPath(t *testing.T) {
 func TestLoad_NativeYAMLMapping(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
-	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `
 teams:
   dosd:
@@ -41,7 +40,7 @@ teams:
     labels: [jiramcp]
 defaultTeam: dosd
 `)
-	cfg, err := Load()
+	cfg, err := Load(TransportStdio)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -57,9 +56,8 @@ defaultTeam: dosd
 func TestLoad_RejectsUnknownMappingField(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
-	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", "teams:\n  p:\n    projectKey: P\n    bogus: x\n")
-	if _, err := Load(); err == nil {
+	if _, err := Load(TransportStdio); err == nil {
 		t.Fatal("expected error for unknown mapping field")
 	}
 }
@@ -67,10 +65,9 @@ func TestLoad_RejectsUnknownMappingField(t *testing.T) {
 func TestLoad_RejectsReservedFieldOverride(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
-	t.Setenv("MCP_TRANSPORT", "stdio")
 	// A mapping must not set core fields (here `project`) via team `fields`.
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", "teams:\n  dosd:\n    projectKey: DOSD\n    fields:\n      project: {key: DPS}\n")
-	if _, err := Load(); err == nil {
+	if _, err := Load(TransportStdio); err == nil {
 		t.Fatal("expected error when team fields override a reserved core field")
 	}
 }
@@ -78,9 +75,8 @@ func TestLoad_RejectsReservedFieldOverride(t *testing.T) {
 func TestLoad_RejectsDuplicateNormalizedTeam(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
-	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", "teams:\n  DOSD:\n    projectKey: DOSD\n  dosd:\n    projectKey: DPS\n")
-	if _, err := Load(); err == nil {
+	if _, err := Load(TransportStdio); err == nil {
 		t.Fatal("expected error for case-insensitive duplicate team keys")
 	}
 }
@@ -88,11 +84,10 @@ func TestLoad_RejectsDuplicateNormalizedTeam(t *testing.T) {
 func TestLoad_RejectsDuplicateProjectKey(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
-	t.Setenv("MCP_TRANSPORT", "stdio")
 	// Two teams routing to the same project (case-insensitively) is rejected so
 	// the defaults applied for that project stay deterministic.
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", "teams:\n  alpha:\n    projectKey: PAY\n  beta:\n    projectKey: pay\n")
-	if _, err := Load(); err == nil {
+	if _, err := Load(TransportStdio); err == nil {
 		t.Fatal("expected error when two teams map to the same project key")
 	}
 }
@@ -103,7 +98,7 @@ func TestLoad_RequiresAuthTokenForHTTP(t *testing.T) {
 	t.Setenv("JIRA_API_TOKEN", "tok")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"p":{"projectKey":"P"}}}`)
 	// No MCP_AUTH_TOKEN and not allowing unauthenticated => error.
-	if _, err := Load(); err == nil {
+	if _, err := Load(TransportHTTP); err == nil {
 		t.Fatal("expected error when http transport has no auth token")
 	}
 }
@@ -111,9 +106,8 @@ func TestLoad_RequiresAuthTokenForHTTP(t *testing.T) {
 func TestLoad_PATInfersDC(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
-	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"p":{"projectKey":"P"}}}`)
-	cfg, err := Load()
+	cfg, err := Load(TransportStdio)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -125,9 +119,8 @@ func TestLoad_PATInfersDC(t *testing.T) {
 func TestLoad_RejectsBadBaseURL(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "not-a-url")
 	t.Setenv("JIRA_PAT", "pat")
-	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"p":{"projectKey":"P"}}}`)
-	if _, err := Load(); err == nil {
+	if _, err := Load(TransportStdio); err == nil {
 		t.Fatal("expected error for non-absolute base url")
 	}
 }
@@ -135,9 +128,8 @@ func TestLoad_RejectsBadBaseURL(t *testing.T) {
 func TestLoad_DefaultTeamMustExist(t *testing.T) {
 	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
 	t.Setenv("JIRA_PAT", "pat")
-	t.Setenv("MCP_TRANSPORT", "stdio")
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"p":{"projectKey":"P"}},"defaultTeam":"ghost"}`)
-	if _, err := Load(); err == nil {
+	if _, err := Load(TransportStdio); err == nil {
 		t.Fatal("expected error when defaultTeam is absent from teams")
 	}
 }

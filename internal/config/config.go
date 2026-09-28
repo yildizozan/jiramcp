@@ -66,8 +66,9 @@ type Config struct {
 	LogFormat string
 }
 
-// Load reads configuration from the environment and validates it.
-func Load() (*Config, error) {
+// Load reads configuration from the environment and validates it for the
+// given transport, which is chosen by the CLI subcommand rather than an env var.
+func Load(transport Transport) (*Config, error) {
 	c := &Config{
 		BaseURL:              strings.TrimRight(env("JIRA_BASE_URL", ""), "/"),
 		AuthMode:             AuthMode(env("JIRA_AUTH_MODE", "")),
@@ -75,7 +76,7 @@ func Load() (*Config, error) {
 		APIToken:             env("JIRA_API_TOKEN", ""),
 		PAT:                  env("JIRA_PAT", ""),
 		DefaultIssueType:     env("JIRA_DEFAULT_ISSUE_TYPE", "Task"),
-		Transport:            Transport(env("MCP_TRANSPORT", "http")),
+		Transport:            transport,
 		HTTPAddr:             env("MCP_HTTP_ADDR", ":8080"),
 		HTTPPath:             env("MCP_HTTP_PATH", "/mcp"),
 		AuthToken:            env("MCP_AUTH_TOKEN", ""),
@@ -143,7 +144,7 @@ func (c *Config) validate() error {
 	case TransportStdio:
 		// no network exposure; auth not applicable.
 	default:
-		return fmt.Errorf("MCP_TRANSPORT must be %q or %q, got %q", TransportHTTP, TransportStdio, c.Transport)
+		return fmt.Errorf("transport must be %q or %q, got %q", TransportHTTP, TransportStdio, c.Transport)
 	}
 
 	if c.Teams == nil || len(c.Teams.Teams) == 0 {

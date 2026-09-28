@@ -30,3 +30,5 @@ COPY --from=build /out/jiramcp /jiramcp
 USER 65532:65532
 EXPOSE 8080 8081
 ENTRYPOINT ["/jiramcp"]
+# The image targets Kubernetes, so it serves HTTP unless another subcommand is given.
+CMD ["http"]

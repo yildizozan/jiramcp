@@ -1,6 +1,8 @@
 // Command jiramcp is an MCP server that creates Jira tickets on behalf of a
-// named person, routed to a team's project. All configuration is supplied via
-// environment variables so it runs unmodified in Kubernetes.
+// named person, routed to a team's project. The subcommand selects the
+// transport (`jiramcp` or `jiramcp stdio` for stdio, `jiramcp http` for
+// streamable HTTP); all other configuration is supplied via environment
+// variables so it runs unmodified in Kubernetes.
 package main
 
 import (
@@ -11,6 +13,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"jiramcp/internal/config"
 	"jiramcp/internal/health"
@@ -23,23 +27,60 @@ import (
 var version = "dev"
 
 func main() {
-	if err := run(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := newRootCmd().ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "fatal:", err)
+		stop()
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	cfg, err := config.Load()
+// newRootCmd builds the CLI. The root command serves stdio so `jiramcp` alone
+// works as a local MCP server; `stdio` and `http` pick the transport explicitly.
+func newRootCmd() *cobra.Command {
+	serveWith := func(t config.Transport) func(*cobra.Command, []string) error {
+		return func(cmd *cobra.Command, _ []string) error { return run(cmd.Context(), t) }
+	}
+
+	root := &cobra.Command{
+		Use:   "jiramcp",
+		Short: "MCP server that creates and manages Jira tickets routed to a team's project",
+		Long: "jiramcp is an MCP server for Jira. Without a subcommand it serves MCP over stdio.\n" +
+			"All configuration (Jira credentials, team mapping, addresses) comes from environment variables.",
+		Version:       version,
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE:          serveWith(config.TransportStdio),
+	}
+	root.CompletionOptions.DisableDefaultCmd = true
+	root.AddCommand(
+		&cobra.Command{
+			Use:   "stdio",
+			Short: "Serve MCP over stdio (default)",
+			Args:  cobra.NoArgs,
+			RunE:  serveWith(config.TransportStdio),
+		},
+		&cobra.Command{
+			Use:   "http",
+			Short: "Serve MCP over streamable HTTP with bearer auth",
+			Args:  cobra.NoArgs,
+			RunE:  serveWith(config.TransportHTTP),
+		},
+	)
+	return root
+}
+
+func run(ctx context.Context, transport config.Transport) error {
+	cfg, err := config.Load(transport)
 	if err != nil {
 		return err
 	}
 
 	logger := applog.Setup(cfg.LogLevel, cfg.LogFormat)
 	logger.Info("starting jiramcp", "version", version, "config", cfg.Redacted())
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	client := jira.NewCloud(cfg.BaseURL, string(cfg.AuthMode), cfg.AuthEmail, cfg.APIToken, cfg.PAT, cfg.HTTPTimeout)
 
