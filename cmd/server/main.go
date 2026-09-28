@@ -82,7 +82,7 @@ func run(ctx context.Context, transport config.Transport) error {
 	logger := applog.Setup(cfg.LogLevel, cfg.LogFormat)
 	logger.Info("starting jiramcp", "version", version, "config", cfg.Redacted())
 
-	client := jira.NewCloud(cfg.BaseURL, string(cfg.AuthMode), cfg.AuthEmail, cfg.APIToken, cfg.PAT, cfg.HTTPTimeout)
+	client := jira.NewRESTClient(cfg.BaseURL, string(cfg.AuthMode), cfg.AuthEmail, cfg.APIToken, cfg.PAT, cfg.HTTPTimeout)
 
 	// Verify credentials up front (fail fast).
 	checkCtx, cancel := context.WithTimeout(ctx, cfg.HTTPTimeout)

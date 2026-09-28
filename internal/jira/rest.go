@@ -14,11 +14,11 @@ import (
 	"time"
 )
 
-// Cloud is a net/http-backed implementation of Client. Despite the name it
-// speaks both dialects: Jira Cloud (REST API v3, ADF, accountId) under basic
+// RESTClient is the net/http-backed implementation of Client. It speaks both
+// dialects: Jira Cloud (REST API v3, ADF, accountId) under basic
 // auth, and Jira Server/Data Center (REST API v2, plain-text, username/key)
 // under bearer-PAT auth. The dialect is selected by authMode at construction.
-type Cloud struct {
+type RESTClient struct {
 	baseURL    string
 	authHeader string
 	dc         bool // Data Center / Server dialect (REST v2) vs Cloud (v3)
@@ -26,9 +26,9 @@ type Cloud struct {
 	http       *http.Client
 }
 
-// NewCloud builds a client. authMode is "cloud" (basic email:token, REST v3) or
+// NewRESTClient builds a client. authMode is "cloud" (basic email:token, REST v3) or
 // "dc" (bearer PAT, REST v2).
-func NewCloud(baseURL, authMode, email, apiToken, pat string, timeout time.Duration) *Cloud {
+func NewRESTClient(baseURL, authMode, email, apiToken, pat string, timeout time.Duration) *RESTClient {
 	dc := authMode == "dc"
 	var authHeader string
 	if dc {
@@ -41,7 +41,7 @@ func NewCloud(baseURL, authMode, email, apiToken, pat string, timeout time.Durat
 	if dc {
 		ver = "2"
 	}
-	return &Cloud{
+	return &RESTClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		authHeader: authHeader,
 		dc:         dc,
@@ -59,29 +59,48 @@ func NewCloud(baseURL, authMode, email, apiToken, pat string, timeout time.Durat
 }
 
 // api builds a REST path for the active API version, e.g. "/rest/api/2/myself".
-func (c *Cloud) api(suffix string) string {
+func (c *RESTClient) api(suffix string) string {
 	return "/rest/api/" + c.ver + suffix
 }
 
 // browseURL builds the human-facing URL for an issue key.
-func (c *Cloud) browseURL(key string) string {
+func (c *RESTClient) browseURL(key string) string {
 	return c.baseURL + "/browse/" + key
 }
 
 // BrowseURL implements Client.
-func (c *Cloud) BrowseURL(key string) string { return c.browseURL(key) }
+func (c *RESTClient) BrowseURL(key string) string { return c.browseURL(key) }
 
 // userRef wraps a resolved user identifier in the dialect-appropriate object
 // for an issue field: {"name": ...} for DC/Server, {"accountId": ...} for Cloud.
-func (c *Cloud) userRef(id string) map[string]any {
+func (c *RESTClient) userRef(id string) map[string]any {
 	if c.dc {
 		return map[string]any{"name": id}
 	}
 	return map[string]any{"accountId": id}
 }
 
+// renderText returns the dialect-appropriate representation of a rich-text body:
+// a plain string (wiki markup) on Server/DC REST v2, an ADF document on Cloud
+// REST v3.
+func (c *RESTClient) renderText(text string) any {
+	if c.dc {
+		return text
+	}
+	return TextToADF(text)
+}
+
+// componentRefs wraps component names in the {"name": ...} objects Jira expects.
+func componentRefs(names []string) []any {
+	refs := make([]any, 0, len(names))
+	for _, name := range names {
+		refs = append(refs, map[string]any{"name": name})
+	}
+	return refs
+}
+
 // do executes a request and returns the response body for 2xx, or an *APIError.
-func (c *Cloud) do(ctx context.Context, op, method, path string, query url.Values, body any) ([]byte, error) {
+func (c *RESTClient) do(ctx context.Context, op, method, path string, query url.Values, body any) ([]byte, error) {
 	full := c.baseURL + path
 	if len(query) > 0 {
 		full += "?" + query.Encode()
@@ -132,7 +151,7 @@ func (c *Cloud) do(ctx context.Context, op, method, path string, query url.Value
 }
 
 // Myself implements Client.
-func (c *Cloud) Myself(ctx context.Context) (*User, error) {
+func (c *RESTClient) Myself(ctx context.Context) (*User, error) {
 	data, err := c.do(ctx, "get current user", http.MethodGet, c.api("/myself"), nil, nil)
 	if err != nil {
 		return nil, err
@@ -146,7 +165,7 @@ func (c *Cloud) Myself(ctx context.Context) (*User, error) {
 
 // SearchUsers implements Client. Cloud uses the `query` parameter; Data Center
 // uses `username` and matches against username/display-name/email.
-func (c *Cloud) SearchUsers(ctx context.Context, query string) ([]User, error) {
+func (c *RESTClient) SearchUsers(ctx context.Context, query string) ([]User, error) {
 	q := url.Values{}
 	if c.dc {
 		q.Set("username", query)
@@ -168,7 +187,7 @@ func (c *Cloud) SearchUsers(ctx context.Context, query string) ([]User, error) {
 // SearchProjects implements Client. Cloud has a paginated /project/search with
 // server-side filtering; Data Center returns the full /project array, which we
 // filter client-side to honor the query.
-func (c *Cloud) SearchProjects(ctx context.Context, query string) ([]Project, error) {
+func (c *RESTClient) SearchProjects(ctx context.Context, query string) ([]Project, error) {
 	if c.dc {
 		data, err := c.do(ctx, "search projects", http.MethodGet, c.api("/project"), nil, nil)
 		if err != nil {
@@ -218,7 +237,7 @@ func filterProjects(in []Project, query string) []Project {
 // IssueTypes implements Client. On Data Center the issue types come straight
 // from the project resource (the createmeta endpoint is unreliable across DC
 // versions); on Cloud they come from the dedicated createmeta/issuetypes path.
-func (c *Cloud) IssueTypes(ctx context.Context, projectKey string) ([]IssueType, error) {
+func (c *RESTClient) IssueTypes(ctx context.Context, projectKey string) ([]IssueType, error) {
 	if c.dc {
 		data, err := c.do(ctx, "list issue types", http.MethodGet,
 			c.api("/project/"+url.PathEscape(projectKey)), nil, nil)
@@ -262,7 +281,7 @@ func (c *Cloud) IssueTypes(ctx context.Context, projectKey string) ([]IssueType,
 // blocked by a metadata pre-check when the service account holds Modify
 // Reporter. So DC always returns an error here, which callers treat as "skip
 // pre-validation" and rely on Jira's own create-time validation instead.
-func (c *Cloud) CreateMeta(ctx context.Context, projectKey, issueTypeID string) (*CreateMeta, error) {
+func (c *RESTClient) CreateMeta(ctx context.Context, projectKey, issueTypeID string) (*CreateMeta, error) {
 	if c.dc {
 		return nil, fmt.Errorf("createmeta pre-validation is skipped on Jira Server/Data Center")
 	}
@@ -292,7 +311,7 @@ func (c *Cloud) CreateMeta(ctx context.Context, projectKey, issueTypeID string) 
 }
 
 // CreateIssue implements Client.
-func (c *Cloud) CreateIssue(ctx context.Context, in CreateIssueInput) (*CreatedIssue, error) {
+func (c *RESTClient) CreateIssue(ctx context.Context, in CreateIssueInput) (*CreatedIssue, error) {
 	fields := map[string]any{}
 	// Team-supplied extra fields (custom fields) are applied FIRST so the core
 	// fields below always win. Combined with config-load validation that rejects
@@ -305,13 +324,7 @@ func (c *Cloud) CreateIssue(ctx context.Context, in CreateIssueInput) (*CreatedI
 	fields["issuetype"] = map[string]any{"id": in.IssueTypeID}
 	fields["summary"] = in.Summary
 	if in.Description != "" {
-		if c.dc {
-			// DC/Server REST v2 expects a plain string (wiki markup).
-			fields["description"] = in.Description
-		} else {
-			// Cloud REST v3 requires Atlassian Document Format.
-			fields["description"] = TextToADF(in.Description)
-		}
+		fields["description"] = c.renderText(in.Description)
 	}
 	if in.ReporterID != "" {
 		fields["reporter"] = c.userRef(in.ReporterID)
@@ -326,11 +339,7 @@ func (c *Cloud) CreateIssue(ctx context.Context, in CreateIssueInput) (*CreatedI
 		fields["labels"] = in.Labels
 	}
 	if len(in.Components) > 0 {
-		comps := make([]any, 0, len(in.Components))
-		for _, name := range in.Components {
-			comps = append(comps, map[string]any{"name": name})
-		}
-		fields["components"] = comps
+		fields["components"] = componentRefs(in.Components)
 	}
 	if in.DueDate != "" {
 		fields["duedate"] = in.DueDate
@@ -351,17 +360,8 @@ func (c *Cloud) CreateIssue(ctx context.Context, in CreateIssueInput) (*CreatedI
 	return &out, nil
 }
 
-// renderText returns the dialect-appropriate representation of a rich-text body:
-// a plain string on Server/DC, an ADF document on Cloud.
-func (c *Cloud) renderText(text string) any {
-	if c.dc {
-		return text
-	}
-	return TextToADF(text)
-}
-
 // UpdateIssue implements Client.
-func (c *Cloud) UpdateIssue(ctx context.Context, key string, in UpdateIssueInput) error {
+func (c *RESTClient) UpdateIssue(ctx context.Context, key string, in UpdateIssueInput) error {
 	fields := map[string]any{}
 	for k, v := range in.ExtraFields {
 		fields[k] = v
@@ -382,11 +382,7 @@ func (c *Cloud) UpdateIssue(ctx context.Context, key string, in UpdateIssueInput
 		fields["labels"] = in.Labels
 	}
 	if in.Components != nil {
-		comps := make([]any, 0, len(in.Components))
-		for _, name := range in.Components {
-			comps = append(comps, map[string]any{"name": name})
-		}
-		fields["components"] = comps
+		fields["components"] = componentRefs(in.Components)
 	}
 	if in.DueDate != "" {
 		fields["duedate"] = in.DueDate
@@ -412,7 +408,7 @@ type wireComment struct {
 
 // toComment converts a decoded wire comment into the exported form, flattening
 // a Cloud ADF body to plain text.
-func (c *Cloud) toComment(w wireComment, key string) Comment {
+func (c *RESTClient) toComment(w wireComment, key string) Comment {
 	return Comment{
 		ID:      w.ID,
 		Body:    decodeCommentBody(w.Body),
@@ -442,7 +438,7 @@ func decodeCommentBody(raw json.RawMessage) string {
 }
 
 // AddComment implements Client.
-func (c *Cloud) AddComment(ctx context.Context, key, body string) (*Comment, error) {
+func (c *RESTClient) AddComment(ctx context.Context, key, body string) (*Comment, error) {
 	data, err := c.do(ctx, "add comment", http.MethodPost,
 		c.api("/issue/"+url.PathEscape(key)+"/comment"), nil,
 		map[string]any{"body": c.renderText(body)})
@@ -461,7 +457,7 @@ func (c *Cloud) AddComment(ctx context.Context, key, body string) (*Comment, err
 // newest ones are the LAST page: the count is read first and the window is
 // requested by offset. That costs one extra cheap request but is deterministic
 // on both dialects, unlike `orderBy`, which Server/DC does not honor reliably.
-func (c *Cloud) ListComments(ctx context.Context, key string, limit int) ([]Comment, error) {
+func (c *RESTClient) ListComments(ctx context.Context, key string, limit int) ([]Comment, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -508,7 +504,7 @@ func (c *Cloud) ListComments(ctx context.Context, key string, limit int) ([]Comm
 }
 
 // UpdateComment implements Client. The body is REPLACED, not appended to.
-func (c *Cloud) UpdateComment(ctx context.Context, key, commentID, body string) (*Comment, error) {
+func (c *RESTClient) UpdateComment(ctx context.Context, key, commentID, body string) (*Comment, error) {
 	data, err := c.do(ctx, "update comment", http.MethodPut,
 		c.api("/issue/"+url.PathEscape(key)+"/comment/"+url.PathEscape(commentID)), nil,
 		map[string]any{"body": c.renderText(body)})
@@ -524,7 +520,7 @@ func (c *Cloud) UpdateComment(ctx context.Context, key, commentID, body string) 
 }
 
 // Transitions implements Client.
-func (c *Cloud) Transitions(ctx context.Context, key string) ([]Transition, error) {
+func (c *RESTClient) Transitions(ctx context.Context, key string) ([]Transition, error) {
 	data, err := c.do(ctx, "list transitions", http.MethodGet,
 		c.api("/issue/"+url.PathEscape(key)+"/transitions"), nil, nil)
 	if err != nil {
@@ -550,7 +546,7 @@ func (c *Cloud) Transitions(ctx context.Context, key string) ([]Transition, erro
 }
 
 // TransitionIssue implements Client.
-func (c *Cloud) TransitionIssue(ctx context.Context, key, transitionID, comment string) error {
+func (c *RESTClient) TransitionIssue(ctx context.Context, key, transitionID, comment string) error {
 	payload := map[string]any{"transition": map[string]any{"id": transitionID}}
 	if comment != "" {
 		payload["update"] = map[string]any{

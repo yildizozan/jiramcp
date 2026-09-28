@@ -91,13 +91,9 @@ func (s *Server) handleTransition(ctx context.Context, req mcp.CallToolRequest) 
 	to := strings.TrimSpace(req.GetString("to", ""))
 	if to == "" {
 		// Discovery mode: list what is possible.
-		names := make([]string, 0, len(available))
-		for _, t := range available {
-			names = append(names, fmt.Sprintf("%s -> %s", t.Name, t.ToName))
-		}
 		return mcp.NewToolResultStructured(
 			map[string]any{"key": key, "transitions": available},
-			fmt.Sprintf("%s available transitions: %s", key, strings.Join(names, "; "))), nil
+			fmt.Sprintf("%s available transitions: %s", key, describeTransitions(available))), nil
 	}
 
 	var match *jira.Transition
@@ -108,12 +104,8 @@ func (s *Server) handleTransition(ctx context.Context, req mcp.CallToolRequest) 
 		}
 	}
 	if match == nil {
-		names := make([]string, 0, len(available))
-		for _, t := range available {
-			names = append(names, fmt.Sprintf("%s -> %s", t.Name, t.ToName))
-		}
 		return mcp.NewToolResultError(fmt.Sprintf(
-			"no transition matches %q for %s; available: %s", to, key, strings.Join(names, "; "))), nil
+			"no transition matches %q for %s; available: %s", to, key, describeTransitions(available))), nil
 	}
 
 	if err := s.client.TransitionIssue(ctx, key, match.ID, req.GetString("comment", "")); err != nil {
@@ -124,4 +116,14 @@ func (s *Server) handleTransition(ctx context.Context, req mcp.CallToolRequest) 
 	return mcp.NewToolResultStructured(
 		map[string]any{"key": key, "transition": match.Name, "status": match.ToName, "url": url},
 		fmt.Sprintf("Transitioned %s via %q to %s: %s", key, match.Name, match.ToName, url)), nil
+}
+
+// describeTransitions renders transitions as "Name -> Status" pairs for the
+// human-readable tool text.
+func describeTransitions(ts []jira.Transition) string {
+	names := make([]string, 0, len(ts))
+	for _, t := range ts {
+		names = append(names, fmt.Sprintf("%s -> %s", t.Name, t.ToName))
+	}
+	return strings.Join(names, "; ")
 }
