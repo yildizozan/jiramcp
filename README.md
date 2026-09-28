@@ -53,7 +53,6 @@ accountId, or email/name resolved to exactly one active user), `team` and/or
 | `JIRA_TEAM_MAPPING_FILE` | one of | — | Path to mapping file (e.g. ConfigMap mount) |
 | `JIRA_DEFAULT_ISSUE_TYPE` | no | `Task` | Fallback issue type |
 | `JIRA_HTTP_TIMEOUT` | no | `15s` | Per-request timeout |
-| `MCP_TRANSPORT` | no | `http` | `http` or `stdio` |
 | `MCP_HTTP_ADDR` | no | `:8080` | HTTP listen address |
 | `MCP_HTTP_PATH` | no | `/mcp` | MCP endpoint path |
 | `MCP_AUTH_TOKEN` | http | — | Bearer token required to call the HTTP endpoint |
@@ -88,10 +87,13 @@ superset of JSON, so an inline JSON document is still accepted.
 make build
 JIRA_BASE_URL=https://jira.yildizozan.com \
 JIRA_AUTH_EMAIL=svc@yildizozan.com JIRA_API_TOKEN=*** \
-MCP_TRANSPORT=stdio \
 JIRA_TEAM_MAPPING_FILE=examples/team-mapping.yaml \
-./bin/jiramcp
+./bin/jiramcp          # stdio (same as: ./bin/jiramcp stdio)
 ```
+
+The subcommand selects the transport: `jiramcp` or `jiramcp stdio` serves MCP
+over stdio, `jiramcp http` serves streamable HTTP. The Docker image defaults to
+`http`; the Helm chart passes `mcp.transport` as the subcommand.
 
 In `http` mode the server requires `MCP_AUTH_TOKEN` (or set
 `MCP_ALLOW_UNAUTHENTICATED=true` for local dev only). Health/readiness are on

@@ -7,7 +7,8 @@ Guidance for AI coding agents working on **jiramcp**.
 A Model Context Protocol (MCP) server in Go (`github.com/mark3labs/mcp-go`) that
 creates and updates **Jira tickets on behalf of a named person**, routed to a
 team's project. All configuration comes from environment variables; a Helm chart
-runs it on Kubernetes. Transports: streamable HTTP (default) and stdio.
+runs it on Kubernetes. Transports, chosen by subcommand: stdio (`jiramcp`, `jiramcp stdio`) and
+streamable HTTP (`jiramcp http`). The Docker image defaults to `http`.
 
 It speaks **two Jira dialects**, selected by `JIRA_AUTH_MODE`:
 - `cloud` — Jira Cloud, REST **v3**, **ADF** descriptions, **accountId** identity, Basic `email:token`.
@@ -35,7 +36,7 @@ Run locally over stdio against a real Jira:
 
 ```sh
 JIRA_BASE_URL=https://jira.yildizozan.com JIRA_AUTH_MODE=dc JIRA_PAT=*** \
-MCP_TRANSPORT=stdio JIRA_TEAM_MAPPING_FILE=examples/dosd-mapping.yaml \
+JIRA_TEAM_MAPPING_FILE=examples/dosd-mapping.yaml \
 ./bin/jiramcp
 ```
 
@@ -54,7 +55,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ## Layout
 
 ```
-cmd/server/main.go        wiring: config -> jira client -> mcp server -> transport; /myself credential check
+cmd/server/main.go        cobra CLI (root/stdio/http) -> config -> jira client -> mcp server -> transport; /myself credential check
 internal/config/          env parsing (config.go) + team mapping load/validate (teams.go, YAML)
 internal/jira/            Client interface (client.go) + dual-dialect HTTP impl (cloud.go); ADF (adf.go); error mapping (errors.go)
 internal/mcpserver/       MCP server, tools, transports, auth middleware
