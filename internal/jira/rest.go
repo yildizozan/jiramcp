@@ -176,7 +176,7 @@ func (c *RESTClient) send(ctx context.Context, op, method, full string, payload 
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", op, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Cap the response body to avoid unbounded memory use.
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))

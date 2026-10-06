@@ -65,7 +65,7 @@ func TestStartHealth_ServesProbes(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := ln.Addr().String()
-	ln.Close()
+	_ = ln.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -79,7 +79,7 @@ func TestStartHealth_ServesProbes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /healthz: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("/healthz status = %d, want 200", resp.StatusCode)
 	}
@@ -90,7 +90,7 @@ func TestStartHealth_BusyPortFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	if _, err := startHealth(context.Background(), ln.Addr().String(), okProbe, time.Second, discardLogger()); err == nil {
 		t.Fatal("expected an error when the health port is already in use")
