@@ -84,6 +84,10 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 		}
 	}
 	setReporter := reporterID != p.self
+	if setReporter && !p.onBehalf {
+		return mcp.NewToolResultError("reporter: you may only file tickets as yourself; " +
+			"filing on behalf of someone else needs the on-behalf group (OIDC_ON_BEHALF_GROUP)"), nil
+	}
 	var assigneeID string
 	if ref := req.GetString("assignee", ""); ref != "" {
 		assigneeID, err = resolveUserID(ctx, p.client, ref, s.dc())

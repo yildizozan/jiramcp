@@ -153,7 +153,7 @@ func TestCallerAuth_EndToEndPerCallerClients(t *testing.T) {
 
 func TestCallerCache_StaysBounded(t *testing.T) {
 	c := newCallerCache()
-	verify := func(context.Context, string) (*principal, error) { return &principal{}, nil }
+	verify := func(context.Context, string) (*principal, time.Time, error) { return &principal{}, time.Time{}, nil }
 	for i := 0; i < maxCachedCallers+10; i++ {
 		_, _ = c.get(context.Background(), "Bearer "+strings.Repeat("x", i+1), verify)
 	}

@@ -86,6 +86,26 @@ spec:
             {{- end }}
             - name: MCP_AUTH_MODE
               value: {{ .Values.mcp.authMode | quote }}
+            {{- if include "jiramcp.oidc" . }}
+            - name: OIDC_ISSUER_URL
+              value: {{ .Values.oidc.issuerUrl | quote }}
+            - name: OIDC_AUDIENCE
+              value: {{ .Values.oidc.audience | quote }}
+            - name: OIDC_USER_CLAIM
+              value: {{ .Values.oidc.userClaim | quote }}
+            - name: OIDC_GROUPS_CLAIM
+              value: {{ .Values.oidc.groupsClaim | quote }}
+            - name: OIDC_GROUP_PROJECTS_FILE
+              value: /etc/jiramcp/group-projects.yaml
+            {{- with .Values.oidc.onBehalfGroup }}
+            - name: OIDC_ON_BEHALF_GROUP
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.oidc.resourceUrl }}
+            - name: OIDC_RESOURCE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             - name: MCP_HTTP_ADDR
               value: ":{{ .Values.service.containerPort }}"
             - name: MCP_HTTP_PATH
@@ -149,7 +169,7 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            {{- if include "jiramcp.hasMapping" . }}
+            {{- if include "jiramcp.hasConfigFiles" . }}
             - name: team-mapping
               mountPath: /etc/jiramcp
               readOnly: true
@@ -157,7 +177,7 @@ spec:
             - name: tmp
               mountPath: /tmp
       volumes:
-        {{- if include "jiramcp.hasMapping" . }}
+        {{- if include "jiramcp.hasConfigFiles" . }}
         - name: team-mapping
           configMap:
             name: {{ include "jiramcp.fullname" . }}

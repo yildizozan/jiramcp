@@ -67,7 +67,11 @@ mcp:
   #   jira  - each caller sends their own Jira credentials (Authorization:
   #           Bearer <PAT> on dc, Basic email:token on cloud) and the server
   #           acts as them. No service-account credentials or authToken.
+  #   oidc  - each caller sends an OIDC access token (e.g. from Dex); their
+  #           groups decide the projects (oidc.groupProjects) and Jira is
+  #           called as the service account. No authToken.
   authMode: token
+
   # Bearer token required to call the HTTP endpoint. Strongly recommended.
   # Sourced from the Secret (key MCP_AUTH_TOKEN) like other credentials.
   authToken: ""               # used only when existingSecret is empty
@@ -75,6 +79,23 @@ mcp:
   # Disable HTTP auth entirely. DANGEROUS — local/dev only.
   allowUnauthenticated: false
 
+# Used when mcp.authMode=oidc.
+oidc:
+  issuerUrl: ""               # e.g. https://dex.yildizozan.com (REQUIRED in oidc mode)
+  audience: jiramcp           # client id the access tokens are issued for
+  userClaim: email            # claim naming the caller's Jira user
+  groupsClaim: groups
+  # Members may file tickets with someone else as reporter. Empty: nobody.
+  onBehalfGroup: ""
+  # Public URL of the MCP endpoint, e.g. https://jiramcp.yildizozan.com/mcp.
+  # When set, /.well-known/oauth-protected-resource/<path> is served so MCP
+  # clients can discover the issuer; route that path in the Ingress too.
+  resourceUrl: ""
+  # Group -> projects its members may use (YAML). REQUIRED in oidc mode.
+  groupProjects: ""
+  #  groupProjects: |
+  #    pay-devs: [PAY]
+  #    dosd-devs: [DOSD, DPS]
 logging:
   level: info                 # debug|info|warn|error
   format: json                # json|text
@@ -99,6 +120,9 @@ ingress:
       paths:
         - path: /mcp
           pathType: Prefix
+        # In oidc mode with oidc.resourceUrl set, also route the metadata:
+        # - path: /.well-known/oauth-protected-resource
+        #   pathType: Prefix
   tls: []
 
 resources:

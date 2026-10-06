@@ -1,4 +1,4 @@
-{{- if include "jiramcp.hasMapping" . }}
+{{- if include "jiramcp.hasConfigFiles" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -6,6 +6,12 @@ metadata:
   labels:
     {{- include "jiramcp.labels" . | nindent 4 }}
 data:
+  {{- if include "jiramcp.hasMapping" . }}
   team-mapping.yaml: |
 {{ .Values.teamMapping.inlineYaml | indent 4 }}
+  {{- end }}
+  {{- if include "jiramcp.oidc" . }}
+  group-projects.yaml: |
+{{ .Values.oidc.groupProjects | indent 4 }}
+  {{- end }}
 {{- end }}

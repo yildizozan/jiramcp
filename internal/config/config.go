@@ -46,7 +46,33 @@ const (
 	// Authorization header (Bearer PAT on Server/DC, Basic email:token on
 	// Cloud) and acts as that caller.
 	MCPAuthJira MCPAuth = "jira"
+	// MCPAuthOIDC verifies an OIDC access token (e.g. from Dex), maps the
+	// caller's groups to projects, and acts with the service account.
+	MCPAuthOIDC MCPAuth = "oidc"
 )
+
+// OIDC configures MCP_AUTH_MODE=oidc.
+type OIDC struct {
+	// IssuerURL is the OIDC issuer (OIDC_ISSUER_URL), e.g. https://dex.example.com.
+	IssuerURL string
+	// Audience is the client id the tokens must be issued for (OIDC_AUDIENCE).
+	Audience string
+	// UserClaim names the claim that identifies the caller's Jira user
+	// (OIDC_USER_CLAIM, default "email").
+	UserClaim string
+	// GroupsClaim names the claim listing the caller's groups
+	// (OIDC_GROUPS_CLAIM, default "groups").
+	GroupsClaim string
+	// OnBehalfGroup is the group whose members may file tickets with another
+	// person as reporter (OIDC_ON_BEHALF_GROUP). Empty: nobody may.
+	OnBehalfGroup string
+	// ResourceURL is the public URL of the MCP endpoint (OIDC_RESOURCE_URL).
+	// When set, OAuth protected resource metadata (RFC 9728) is served so MCP
+	// clients can discover the issuer.
+	ResourceURL string
+	// GroupProjects maps a group to the projects its members may use.
+	GroupProjects map[string][]string
+}
 
 // Config is the fully validated runtime configuration.
 type Config struct {
@@ -75,6 +101,8 @@ type Config struct {
 
 	// MCPAuth is the HTTP caller authentication mode (MCP_AUTH_MODE).
 	MCPAuth MCPAuth
+	// OIDC is set when MCPAuth is MCPAuthOIDC.
+	OIDC *OIDC
 	// AuthToken is the static bearer token required to call the HTTP MCP
 	// endpoint. Required when Transport==http unless AllowUnauthenticated.
 	AuthToken string
@@ -136,6 +164,12 @@ func Load(transport Transport) (*Config, error) {
 	}
 	c.Teams = teams
 
+	if c.Transport == TransportHTTP && c.MCPAuth == MCPAuthOIDC {
+		if c.OIDC, err = loadOIDC(); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := c.validate(); err != nil {
 		return nil, err
 	}
@@ -174,8 +208,12 @@ func (c *Config) validate() error {
 			}
 		case MCPAuthJira:
 			// Callers authenticate with their own Jira credentials.
+		case MCPAuthOIDC:
+			if err := c.OIDC.validate(); err != nil {
+				return err
+			}
 		default:
-			return fmt.Errorf("MCP_AUTH_MODE must be %q or %q, got %q", MCPAuthToken, MCPAuthJira, c.MCPAuth)
+			return fmt.Errorf("MCP_AUTH_MODE must be %q, %q or %q, got %q", MCPAuthToken, MCPAuthJira, MCPAuthOIDC, c.MCPAuth)
 		}
 	case TransportStdio:
 		// no network exposure; auth not applicable.
@@ -193,12 +231,13 @@ func (c *Config) validate() error {
 // default project.
 func (c *Config) validateProjects() error {
 	mapped := c.Teams.ProjectKeyList()
-	// The token-mode HTTP endpoint acts as one shared service account, so it
-	// must not reach every project that account can see: one of the two lists
-	// must bound it. A local stdio server, or an HTTP server acting with each
-	// caller's own credentials, acts as its user, and Jira's own permissions
-	// bound it.
-	if c.Transport == TransportHTTP && !c.ActsAsCaller() && len(mapped) == 0 && len(c.Projects) == 0 {
+	// The token-mode HTTP endpoint acts as one shared service account for
+	// every caller, so it must not reach every project that account can see:
+	// one of the two lists must bound it. A local stdio server, or an HTTP
+	// server acting with each caller's own credentials, acts as its user, and
+	// Jira's own permissions bound it. In OIDC mode the caller's groups do.
+	sharedAccount := c.Transport == TransportHTTP && c.MCPAuth == MCPAuthToken
+	if sharedAccount && len(mapped) == 0 && len(c.Projects) == 0 {
 		return fmt.Errorf("http transport needs JIRA_PROJECTS or a team mapping " +
 			"(JIRA_TEAM_MAPPING_YAML / JIRA_TEAM_MAPPING_FILE) to bound the projects it may use")
 	}
@@ -263,6 +302,7 @@ func (c *Config) Redacted() map[string]any {
 		"httpAddr":             c.HTTPAddr,
 		"httpPath":             c.HTTPPath,
 		"mcpAuthMode":          c.MCPAuth,
+		"oidc":                 c.OIDC,
 		"authToken":            maskSecret(c.AuthToken),
 		"allowUnauthenticated": c.AllowUnauthenticated,
 		"healthAddr":           c.HealthAddr,

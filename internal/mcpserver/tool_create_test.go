@@ -21,11 +21,12 @@ type fakeClient struct {
 	myselfCalls int
 	callers     map[string]*fakeClient // WithAuthorization header -> client acting as that caller
 
-	users      []jira.User
-	projects   []jira.Project
-	issueTypes []jira.IssueType
-	meta       *jira.CreateMeta
-	metaErr    error
+	users        []jira.User
+	usersByQuery map[string][]jira.User // when set, SearchUsers answers per query
+	projects     []jira.Project
+	issueTypes   []jira.IssueType
+	meta         *jira.CreateMeta
+	metaErr      error
 
 	created   *jira.CreateIssueInput
 	createErr error
@@ -71,7 +72,10 @@ func (f *fakeClient) WithAuthorization(header string) jira.Client {
 	}
 	return &fakeClient{meErr: &jira.APIError{StatusCode: 401, Op: "get current user"}}
 }
-func (f *fakeClient) SearchUsers(context.Context, string) ([]jira.User, error) {
+func (f *fakeClient) SearchUsers(_ context.Context, query string) ([]jira.User, error) {
+	if f.usersByQuery != nil {
+		return f.usersByQuery[query], nil
+	}
 	return f.users, nil
 }
 func (f *fakeClient) SearchProjects(context.Context, string) ([]jira.Project, error) {

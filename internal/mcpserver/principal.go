@@ -19,6 +19,12 @@ type principal struct {
 	// reporter to them. It is empty when the client is a shared service
 	// account: then create must be told who the reporter is.
 	self string
+	// onBehalf reports whether the caller may file tickets with another
+	// person as reporter. Jira's Modify Reporter permission applies on top.
+	onBehalf bool
+	// caller identifies who is calling, for the audit log; "" when the server
+	// cannot tell callers apart (one shared token).
+	caller string
 }
 
 type principalKey struct{}

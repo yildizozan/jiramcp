@@ -26,6 +26,7 @@ const (
 type Server struct {
 	base    *principal // used when the call's context carries none
 	callers *callerCache
+	oidc    *OIDCVerifier
 	teams   *config.TeamMapping
 	cfg     *config.Config
 	logger  *slog.Logger
@@ -37,13 +38,16 @@ type Server struct {
 // developer's token), or "" for a shared service account. version is reported
 // to clients as serverInfo.version; the binary passes its build version so
 // both `jiramcp --version` and MCP clients see the same value.
-func New(cfg *config.Config, client jira.Client, self string, logger *slog.Logger, version string) *Server {
+func New(cfg *config.Config, client jira.Client, self string, logger *slog.Logger, version string, opts ...Option) *Server {
 	s := &Server{
-		base:    &principal{client: client, policy: cfg.ProjectPolicy(), self: self},
+		base:    &principal{client: client, policy: cfg.ProjectPolicy(), self: self, onBehalf: true, caller: self},
 		callers: newCallerCache(),
 		teams:   cfg.Teams,
 		cfg:     cfg,
 		logger:  logger,
+	}
+	for _, opt := range opts {
+		opt(s)
 	}
 	s.mcp = server.NewMCPServer(
 		name, version,
@@ -79,6 +83,9 @@ func (s *Server) RunStdio(ctx context.Context) error {
 // cancelled. Stateless mode is used so the service scales horizontally without
 // sticky sessions.
 func (s *Server) RunHTTP(ctx context.Context) error {
+	if s.cfg.MCPAuth == config.MCPAuthOIDC && s.oidc == nil {
+		return errors.New("MCP_AUTH_MODE=oidc needs an OIDC verifier (WithOIDC)")
+	}
 	httpSrv := &http.Server{
 		Addr:    s.cfg.HTTPAddr,
 		Handler: s.httpHandler(),
@@ -94,7 +101,7 @@ func (s *Server) RunHTTP(ctx context.Context) error {
 		s.logger.Info("starting MCP http transport",
 			"addr", s.cfg.HTTPAddr, "path", s.cfg.HTTPPath,
 			"authMode", s.cfg.MCPAuth,
-			"authenticated", s.cfg.ActsAsCaller() || !s.cfg.AllowUnauthenticated)
+			"authenticated", s.cfg.MCPAuth != config.MCPAuthToken || !s.cfg.AllowUnauthenticated)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -119,11 +126,15 @@ func (s *Server) httpHandler() http.Handler {
 		server.WithStateLess(true),
 	)
 	auth := s.authMiddleware
-	if s.cfg.ActsAsCaller() {
+	switch s.cfg.MCPAuth {
+	case config.MCPAuthJira:
 		auth = s.callerAuthMiddleware
+	case config.MCPAuthOIDC:
+		auth = s.oidcAuthMiddleware
 	}
 	mux := http.NewServeMux()
 	mux.Handle(s.cfg.HTTPPath, auth(streamable))
+	s.mountResourceMetadata(mux)
 	return mux
 }
 

@@ -42,10 +42,13 @@ func newCallerCache() *callerCache {
 	return &callerCache{now: time.Now, entries: map[[32]byte]cachedCaller{}}
 }
 
+// verifyFunc checks credentials and builds the principal for them. A non-zero
+// expiry caps how long the result may be cached (e.g. a token's own expiry).
+type verifyFunc func(ctx context.Context, header string) (p *principal, expiry time.Time, err error)
+
 // get returns the principal for header, verifying it with verify on a miss or
 // after expiry. A failed verification is not cached.
-func (c *callerCache) get(ctx context.Context, header string,
-	verify func(context.Context, string) (*principal, error)) (*principal, error) {
+func (c *callerCache) get(ctx context.Context, header string, verify verifyFunc) (*principal, error) {
 	key := sha256.Sum256([]byte(header))
 	c.mu.Lock()
 	e, ok := c.entries[key]
@@ -54,16 +57,20 @@ func (c *callerCache) get(ctx context.Context, header string,
 		return e.p, nil
 	}
 
-	p, err := verify(ctx, header)
+	p, expiry, err := verify(ctx, header)
 	if err != nil {
 		return nil, err
+	}
+	expires := c.now().Add(callerTTL)
+	if !expiry.IsZero() && expiry.Before(expires) {
+		expires = expiry
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.entries) >= maxCachedCallers {
 		c.evict()
 	}
-	c.entries[key] = cachedCaller{p: p, expires: c.now().Add(callerTTL)}
+	c.entries[key] = cachedCaller{p: p, expires: expires}
 	return p, nil
 }
 
@@ -119,22 +126,22 @@ func (s *Server) callerAuthMiddleware(next http.Handler) http.Handler {
 
 // verifyCaller asks Jira who the credentials belong to and builds the
 // principal that acts as them.
-func (s *Server) verifyCaller(ctx context.Context, header string) (*principal, error) {
+func (s *Server) verifyCaller(ctx context.Context, header string) (*principal, time.Time, error) {
 	a, ok := s.base.client.(callerAuthorizer)
 	if !ok {
-		return nil, errors.New("jira client cannot act with caller credentials")
+		return nil, time.Time{}, errors.New("jira client cannot act with caller credentials")
 	}
 	client := a.WithAuthorization(header)
 	me, err := client.Myself(ctx)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	self := me.Ref()
 	if self == "" {
-		return nil, errors.New("jira returned no usable user id for the caller")
+		return nil, time.Time{}, errors.New("jira returned no usable user id for the caller")
 	}
 	s.logger.Debug("caller verified", "caller", self)
-	return &principal{client: client, policy: s.base.policy, self: self}, nil
+	return &principal{client: client, policy: s.base.policy, self: self, onBehalf: true, caller: self}, time.Time{}, nil
 }
 
 func unauthorized(w http.ResponseWriter, scheme, msg string) {

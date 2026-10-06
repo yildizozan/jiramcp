@@ -27,6 +27,16 @@
 {{- if trim .Values.teamMapping.inlineYaml -}}true{{- end -}}
 {{- end -}}
 
+{{/* True when the HTTP service authenticates callers with OIDC. */}}
+{{- define "jiramcp.oidc" -}}
+{{- if and (eq .Values.mcp.transport "http") (eq .Values.mcp.authMode "oidc") -}}true{{- end -}}
+{{- end -}}
+
+{{/* True when the ConfigMap has a file to mount. */}}
+{{- define "jiramcp.hasConfigFiles" -}}
+{{- if or (include "jiramcp.hasMapping" .) (include "jiramcp.oidc" .) -}}true{{- end -}}
+{{- end -}}
+
 {{- define "jiramcp.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -75,8 +85,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if not .Values.jira.baseUrl -}}
 {{- fail "jira.baseUrl is required" -}}
 {{- end -}}
-{{- if not (has .Values.mcp.authMode (list "token" "jira")) -}}
-{{- fail "mcp.authMode must be token or jira" -}}
+{{- if not (has .Values.mcp.authMode (list "token" "jira" "oidc")) -}}
+{{- fail "mcp.authMode must be token, jira or oidc" -}}
+{{- end -}}
+{{- if include "jiramcp.oidc" . -}}
+{{- if not .Values.oidc.issuerUrl -}}
+{{- fail "oidc.issuerUrl is required when mcp.authMode=oidc" -}}
+{{- end -}}
+{{- if not (trim .Values.oidc.groupProjects) -}}
+{{- fail "oidc.groupProjects is required when mcp.authMode=oidc" -}}
+{{- end -}}
 {{- end -}}
 {{- if and (eq .Values.mcp.transport "http") (eq .Values.mcp.authMode "token") -}}
 {{- if and (not .Values.mcp.allowUnauthenticated) (not .Values.jira.existingSecret) (not .Values.mcp.authToken) -}}

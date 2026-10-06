@@ -257,3 +257,55 @@ func TestLoad_StdioIgnoresMCPAuthMode(t *testing.T) {
 		t.Fatal("stdio always uses the configured token, never per-caller credentials")
 	}
 }
+
+// oidcEnv sets an OIDC-mode HTTP server on Data Center with a service account.
+func oidcEnv(t *testing.T) {
+	t.Helper()
+	localDC(t)
+	t.Setenv("JIRA_AUTH_MODE", "dc")
+	t.Setenv("MCP_AUTH_MODE", "oidc")
+	t.Setenv("OIDC_ISSUER_URL", "https://dex.yildizozan.com/")
+	t.Setenv("OIDC_AUDIENCE", "jiramcp")
+	t.Setenv("OIDC_GROUP_PROJECTS_YAML", "pay-devs: [pay, DOSD]\nleads: []\n")
+}
+
+func TestLoad_OIDC(t *testing.T) {
+	oidcEnv(t)
+	t.Setenv("OIDC_ON_BEHALF_GROUP", "leads")
+	cfg, err := Load(TransportHTTP)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	o := cfg.OIDC
+	if o == nil || o.IssuerURL != "https://dex.yildizozan.com" || o.UserClaim != "email" || o.GroupsClaim != "groups" {
+		t.Fatalf("unexpected oidc config: %+v", o)
+	}
+	if got := strings.Join(o.ProjectsFor([]string{"pay-devs", "leads", "other"}), ","); got != "PAY,DOSD" {
+		t.Fatalf("ProjectsFor = %q, want PAY,DOSD", got)
+	}
+	if cfg.ActsAsCaller() {
+		t.Fatal("oidc mode acts with the service account, not caller credentials")
+	}
+}
+
+func TestLoad_OIDCValidation(t *testing.T) {
+	cases := map[string]map[string]string{
+		"no issuer":          {"OIDC_ISSUER_URL": ""},
+		"no audience":        {"OIDC_AUDIENCE": ""},
+		"no group mapping":   {"OIDC_GROUP_PROJECTS_YAML": ""},
+		"bad group mapping":  {"OIDC_GROUP_PROJECTS_YAML": "pay-devs: PAY"},
+		"bad resource url":   {"OIDC_RESOURCE_URL": "mcp.example.com/mcp"},
+		"no service account": {"JIRA_PAT": ""},
+	}
+	for name, env := range cases {
+		t.Run(name, func(t *testing.T) {
+			oidcEnv(t)
+			for k, v := range env {
+				t.Setenv(k, v)
+			}
+			if _, err := Load(TransportHTTP); err == nil {
+				t.Fatal("expected a configuration error")
+			}
+		})
+	}
+}

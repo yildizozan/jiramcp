@@ -58,7 +58,14 @@ with your own token, where it defaults to you), `team` and/or `project`, `issue_
 | `JIRA_HTTP_TIMEOUT` | no | `15s` | Per-request timeout |
 | `MCP_HTTP_ADDR` | no | `:8080` | HTTP listen address |
 | `MCP_HTTP_PATH` | no | `/mcp` | MCP endpoint path |
-| `MCP_AUTH_MODE` | no | `token` | HTTP caller auth: `token` (shared token, service account) or `jira` (each caller's own Jira credentials) |
+| `MCP_AUTH_MODE` | no | `token` | HTTP caller auth: `token` (shared token, service account), `jira` (each caller's own Jira credentials) or `oidc` (OIDC access token, groups → projects) |
+| `OIDC_ISSUER_URL` | oidc | — | Issuer, e.g. `https://dex.yildizozan.com` |
+| `OIDC_AUDIENCE` | oidc | — | Client id the access tokens are issued for |
+| `OIDC_GROUP_PROJECTS_YAML` / `_FILE` | oidc | — | Group → projects mapping |
+| `OIDC_USER_CLAIM` | no | `email` | Claim naming the caller's Jira user |
+| `OIDC_GROUPS_CLAIM` | no | `groups` | Claim listing the caller's groups |
+| `OIDC_ON_BEHALF_GROUP` | no | — | Group whose members may file with another reporter |
+| `OIDC_RESOURCE_URL` | no | — | Public MCP URL; enables `/.well-known/oauth-protected-resource` |
 | `MCP_AUTH_TOKEN` | http `token` | — | Bearer token required to call the HTTP endpoint |
 | `MCP_ALLOW_UNAUTHENTICATED` | no | `false` | Disable HTTP auth (dev only) |
 | `HTTP_HEALTH_ADDR` | no | `:8081` | Health/readiness listen address (`http` mode only) |
@@ -138,6 +145,7 @@ over stdio, `jiramcp http` serves streamable HTTP. The Docker image defaults to
 |---|---|---|---|
 | `token` (default) | `Authorization: Bearer $MCP_AUTH_TOKEN` | the service account | `JIRA_PROJECTS` or the team mapping (required) |
 | `jira` | their own Jira credentials: `Bearer <PAT>` on Server/DC, `Basic base64(email:api_token)` on Cloud | the caller | the caller's Jira permissions, narrowed by `JIRA_PROJECTS`/mapping if set |
+| `oidc` | `Authorization: Bearer <OIDC access token>` | the service account | the caller's groups (`OIDC_GROUP_PROJECTS_*`), narrowed by `JIRA_PROJECTS`/mapping if set |
 
 In `jira` mode the server holds no Jira credentials and no `MCP_AUTH_TOKEN`;
 set `JIRA_AUTH_MODE` explicitly (`dc` or `cloud`). Each caller's credentials
@@ -149,6 +157,46 @@ caller's own PAT, e.g.:
 ```bash
 claude mcp add --transport http jiramcp https://jiramcp.example.com/mcp \
   --header "Authorization: Bearer <your Jira PAT>"
+```
+
+#### `oidc` mode with Dex
+
+The server verifies the token's signature, issuer, audience and expiry against
+the issuer's discovery document; Dex issues its access tokens as signed JWTs,
+so they work directly. The caller's `OIDC_USER_CLAIM` (email by default) is
+resolved to exactly one active Jira user, who becomes the default reporter;
+their groups decide the projects:
+
+```yaml
+# OIDC_GROUP_PROJECTS_YAML
+pay-devs: [PAY]
+dosd-devs: [DOSD, DPS]
+```
+
+Callers file tickets only as themselves; members of `OIDC_ON_BEHALF_GROUP` may
+pass another `reporter`. Updates, comments and transitions are made by the
+service account in Jira, so Jira's history shows that account; the server log
+names the caller.
+
+Dex does not support dynamic client registration (RFC 7591), so register one
+public client for MCP clients in the Dex config. A public client without
+`redirectURIs` accepts any `http://localhost:<port>` callback, which is what
+desktop MCP clients use:
+
+```yaml
+staticClients:
+  - id: jiramcp
+    name: jiramcp
+    public: true
+```
+
+Set `OIDC_AUDIENCE=jiramcp` and `OIDC_RESOURCE_URL` to the public MCP URL, so
+clients find Dex through `/.well-known/oauth-protected-resource`. The Dex
+connector must return groups (the `groups` scope), or no project is granted.
+Then each developer runs:
+
+```bash
+claude mcp add --transport http jiramcp https://jiramcp.example.com/mcp --client-id jiramcp
 ```
 
 In `token` mode the server requires `MCP_AUTH_TOKEN` (or set
@@ -174,7 +222,10 @@ helm install jiramcp helm/jiramcp \
   --set-file teamMapping.inlineYaml=examples/team-mapping.yaml
 ```
 
-Set `mcp.authMode=jira` (with `jira.authMode=dc`) to let every caller use their
+For OIDC set `mcp.authMode=oidc`, `oidc.issuerUrl`, `oidc.groupProjects` and,
+for client discovery, `oidc.resourceUrl` (also route
+`/.well-known/oauth-protected-resource` in the Ingress); the service-account
+Secret is still needed. Set `mcp.authMode=jira` (with `jira.authMode=dc`) to let every caller use their
 own PAT; the chart then creates no Secret, and `teamMapping.inlineYaml=""` drops
 the mapping so the callers' Jira permissions alone bound them. Otherwise the
 recommended pattern is `jira.existingSecret` (works with the External
@@ -201,7 +252,7 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
   service credential, give it only to trusted MCP clients, and rotate it when
   a client leaves. If you need per-caller accountability, put an identity-aware
   proxy (OIDC) in front of the endpoint and keep its access logs, or use
-  `jira` mode, where every call runs as the caller.
+  `jira` or `oidc` mode, where every caller is identified.
 - In `jira` mode the server sees each caller's Jira credentials. They are
   never logged or echoed in errors, the cache keys on a hash, and `JIRA_BASE_URL`
   always comes from configuration, never from the caller. Serve it over TLS

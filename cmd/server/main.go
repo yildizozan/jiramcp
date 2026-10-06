@@ -102,7 +102,16 @@ func run(ctx context.Context, transport config.Transport) error {
 		defer shutdown()
 	}
 
-	srv := mcpserver.New(cfg, client, self, logger, version)
+	var opts []mcpserver.Option
+	if cfg.OIDC != nil {
+		v, err := mcpserver.NewOIDCVerifier(ctx, cfg.OIDC.IssuerURL, cfg.OIDC.Audience)
+		if err != nil {
+			return err
+		}
+		logger.Info("oidc issuer ready", "issuer", cfg.OIDC.IssuerURL, "audience", cfg.OIDC.Audience)
+		opts = append(opts, mcpserver.WithOIDC(v))
+	}
+	srv := mcpserver.New(cfg, client, self, logger, version, opts...)
 
 	switch cfg.Transport {
 	case config.TransportStdio:

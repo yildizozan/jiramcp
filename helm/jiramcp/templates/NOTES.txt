@@ -4,7 +4,7 @@ Transport:        {{ .Values.mcp.transport }}
 Jira base URL:    {{ .Values.jira.baseUrl }}
 Auth mode:        {{ .Values.jira.authMode }}
 HTTP MCP path:    {{ .Values.mcp.httpPath }}
-Caller auth:      {{ .Values.mcp.authMode }}{{ if eq .Values.mcp.authMode "jira" }} (callers send their own Jira credentials){{ end }}
+Caller auth:      {{ .Values.mcp.authMode }}{{ if eq .Values.mcp.authMode "jira" }} (callers send their own Jira credentials){{ end }}{{ if eq .Values.mcp.authMode "oidc" }} (callers send an access token from {{ .Values.oidc.issuerUrl }}){{ end }}
 Authenticated:    {{ or (eq .Values.mcp.authMode "jira") (not .Values.mcp.allowUnauthenticated) }}
 
 In-cluster MCP endpoint:
