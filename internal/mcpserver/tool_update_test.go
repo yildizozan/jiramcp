@@ -169,3 +169,36 @@ func TestSearchUsers_SkipsUnreferenceableUsers(t *testing.T) {
 		t.Fatalf("key-only user should be filtered out, got: %s", resultText(res))
 	}
 }
+
+func TestUpdate_ClearFields(t *testing.T) {
+	f := &fakeClient{}
+	srv := newServer(f, testCfg())
+	res, _ := srv.handleUpdateTicket(context.Background(), newReq(map[string]any{
+		"key": "PAY-1", "clear": []any{"assignee", "due_date"},
+	}))
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", resultText(res))
+	}
+	if f.updated == nil || strings.Join(f.updated.Clear, ",") != "assignee,duedate" {
+		t.Fatalf("clear should map to Jira ids [assignee duedate], got %+v", f.updated)
+	}
+}
+
+func TestUpdate_ClearRejectsUnknownAndConflicting(t *testing.T) {
+	cases := map[string]map[string]any{
+		"unknown field":   {"key": "PAY-1", "clear": []any{"summary"}},
+		"set and cleared": {"key": "PAY-1", "assignee": "ozan.yildiz", "clear": []any{"assignee"}},
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeClient{users: []jira.User{{Name: "ozan.yildiz", Active: true}}}
+			res, _ := newServer(f, testCfg()).handleUpdateTicket(context.Background(), newReq(args))
+			if !res.IsError {
+				t.Fatal("expected an error")
+			}
+			if f.updated != nil {
+				t.Fatal("must not call UpdateIssue")
+			}
+		})
+	}
+}

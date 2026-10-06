@@ -124,14 +124,17 @@ type UpdateIssueInput struct {
 	Labels      []string // nil to leave unchanged; otherwise REPLACES the labels
 	Components  []string // nil to leave unchanged; otherwise REPLACES the components
 	DueDate     string   // YYYY-MM-DD; empty to leave unchanged
+	// Clear lists Jira field ids (e.g. "assignee", "duedate") to empty. An
+	// empty value above means "leave unchanged", so clearing needs its own list.
+	Clear       []string
 	ExtraFields map[string]any
 }
 
-// HasChanges reports whether any field is set.
+// HasChanges reports whether any field is set or cleared.
 func (in UpdateIssueInput) HasChanges() bool {
 	return in.Summary != "" || in.Description != "" || in.AssigneeID != "" ||
 		in.Priority != "" || in.Labels != nil || in.Components != nil ||
-		in.DueDate != "" || len(in.ExtraFields) > 0
+		in.DueDate != "" || len(in.Clear) > 0 || len(in.ExtraFields) > 0
 }
 
 // Comment is a comment on an issue. Body is always plain text: the Cloud v3

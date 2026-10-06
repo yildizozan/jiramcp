@@ -483,6 +483,10 @@ func (c *RESTClient) UpdateIssue(ctx context.Context, key string, in UpdateIssue
 	if in.DueDate != "" {
 		fields["duedate"] = in.DueDate
 	}
+	// Jira empties a field that is set to null.
+	for _, id := range in.Clear {
+		fields[id] = nil
+	}
 	// PUT returns 204 No Content on success; we only care about the error.
 	_, err := c.do(ctx, "update issue", http.MethodPut,
 		c.api("/issue/"+url.PathEscape(key)), nil, map[string]any{"fields": fields})

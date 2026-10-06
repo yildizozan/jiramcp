@@ -27,7 +27,7 @@ as the service account.
 |---|---|
 | `create_jira_ticket` | Create a ticket for a `team` (or explicit `project`) with `reporter` set to a named person. |
 | `get_jira_ticket` | Read an existing issue: summary, description (plain text), status, type, priority, people, labels, components, dates, parent. |
-| `update_jira_ticket` | Edit fields (summary, description, assignee, priority, labels, components, due date) on an existing issue. |
+| `update_jira_ticket` | Edit fields (summary, description, assignee, priority, labels, components, due date) on an existing issue; `clear` empties assignee, due date or description. A new description replaces the old one as plain text, so Cloud rich formatting is lost. |
 | `add_comment` | Add a comment to an existing issue. |
 | `list_comments` | List the newest comments on an issue (oldest first), with the `id` needed to edit one. |
 | `update_comment` | Replace the body of an existing comment, by `comment_id`. |

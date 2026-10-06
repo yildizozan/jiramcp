@@ -531,3 +531,21 @@ func TestIssueKey_EmptyKeyIsAnError(t *testing.T) {
 		t.Fatal("expected an error when Jira returns no key")
 	}
 }
+
+func TestUpdateIssue_ClearSendsNull(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 204, ``, &cap)
+	err := cloudClient(srv.URL).UpdateIssue(context.Background(), "PAY-1", UpdateIssueInput{
+		Clear: []string{"assignee", "duedate"},
+	})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	fields, _ := cap.body["fields"].(map[string]any)
+	for _, id := range []string{"assignee", "duedate"} {
+		v, present := fields[id]
+		if !present || v != nil {
+			t.Fatalf("%s must be sent as null to clear it, got present=%v value=%v", id, present, v)
+		}
+	}
+}
