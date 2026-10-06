@@ -15,7 +15,8 @@ type APIError struct {
 	Messages []string
 	// FieldErrors are per-field errors keyed by field id.
 	FieldErrors map[string]string
-	// RetryAfter is the parsed Retry-After header value (seconds), if present.
+	// RetryAfter is the parsed Retry-After header value in seconds, or -1
+	// when the header is absent or unusable.
 	RetryAfter int
 	// Op is the logical operation that failed (e.g. "create issue").
 	Op string
@@ -26,6 +27,9 @@ func (e *APIError) Error() string {
 	fmt.Fprintf(&b, "%s failed: %s (HTTP %d)", e.Op, hint(e.StatusCode), e.StatusCode)
 	if len(e.Messages) > 0 {
 		fmt.Fprintf(&b, ": %s", strings.Join(e.Messages, "; "))
+	}
+	if e.StatusCode == http.StatusTooManyRequests && e.RetryAfter > 0 {
+		fmt.Fprintf(&b, "; retry after %ds", e.RetryAfter)
 	}
 	if len(e.FieldErrors) > 0 {
 		parts := make([]string, 0, len(e.FieldErrors))

@@ -99,55 +99,121 @@ func componentRefs(names []string) []any {
 	return refs
 }
 
+// Rate-limit retry policy. Jira answers 429 before it processes a request, so
+// retrying is safe for every method, including create. Other 5xx answers are
+// not retried: a create may already have taken effect.
+const (
+	maxRateLimitRetries = 2
+	maxRetryWait        = 10 * time.Second
+)
+
 // do executes a request and returns the response body for 2xx, or an *APIError.
+// A 429 is retried up to maxRateLimitRetries times, waiting as long as
+// Retry-After asks; when Jira asks for more than maxRetryWait the 429 is
+// returned at once instead of holding the tool call.
 func (c *RESTClient) do(ctx context.Context, op, method, path string, query url.Values, body any) ([]byte, error) {
 	full := c.baseURL + path
 	if len(query) > 0 {
 		full += "?" + query.Encode()
 	}
 
-	var reqBody io.Reader
+	var payload []byte
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("%s: marshaling request: %w", op, err)
 		}
-		reqBody = bytes.NewReader(b)
+		payload = b
 	}
 
+	for attempt := 0; ; attempt++ {
+		data, apiErr, err := c.send(ctx, op, method, full, payload)
+		if err != nil {
+			return nil, err
+		}
+		if apiErr == nil {
+			return data, nil
+		}
+		if apiErr.StatusCode != http.StatusTooManyRequests || attempt == maxRateLimitRetries {
+			return nil, apiErr
+		}
+		wait := time.Duration(apiErr.RetryAfter) * time.Second
+		if apiErr.RetryAfter < 0 {
+			wait = time.Second << attempt // no usable Retry-After: 1s, 2s
+		}
+		if wait > maxRetryWait {
+			return nil, apiErr
+		}
+		select {
+		case <-ctx.Done():
+			return nil, apiErr
+		case <-time.After(wait):
+		}
+	}
+}
+
+// send performs one HTTP round trip. It returns the body for 2xx, an *APIError
+// for a non-2xx answer, or a plain error when no answer was read.
+func (c *RESTClient) send(ctx context.Context, op, method, full string, payload []byte) ([]byte, *APIError, error) {
+	var reqBody io.Reader
+	if payload != nil {
+		reqBody = bytes.NewReader(payload)
+	}
 	req, err := http.NewRequestWithContext(ctx, method, full, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("%s: building request: %w", op, err)
+		return nil, nil, fmt.Errorf("%s: building request: %w", op, err)
 	}
 	req.Header.Set("Authorization", c.authHeader)
 	req.Header.Set("Accept", "application/json")
 	// Bypass Jira's XSRF check; Server/DC rejects mutating REST calls without it,
 	// returning an HTML page instead of JSON. Harmless on Cloud and for GETs.
 	req.Header.Set("X-Atlassian-Token", "no-check")
-	if body != nil {
+	if payload != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", op, err)
+		return nil, nil, fmt.Errorf("%s: %w", op, err)
 	}
 	defer resp.Body.Close()
 
 	// Cap the response body to avoid unbounded memory use.
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, fmt.Errorf("%s: reading response: %w", op, err)
+		return nil, nil, fmt.Errorf("%s: reading response: %w", op, err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		retryAfter := 0
-		if ra := resp.Header.Get("Retry-After"); ra != "" {
-			retryAfter, _ = strconv.Atoi(ra)
-		}
-		return nil, parseAPIError(op, resp.StatusCode, retryAfter, data)
+		retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+		return nil, parseAPIError(op, resp.StatusCode, retryAfter, data), nil
 	}
-	return data, nil
+	return data, nil, nil
+}
+
+// parseRetryAfter reads a Retry-After header, which is either a number of
+// seconds or an HTTP date. It returns the wait in whole seconds (rounded up),
+// or -1 when the header is absent or unusable.
+func parseRetryAfter(v string, now time.Time) int {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return -1
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs < 0 {
+			return -1
+		}
+		return secs
+	}
+	at, err := http.ParseTime(v)
+	if err != nil {
+		return -1
+	}
+	d := at.Sub(now)
+	if d <= 0 {
+		return 0
+	}
+	return int((d + time.Second - 1) / time.Second)
 }
 
 // Myself implements Client.
