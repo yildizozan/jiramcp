@@ -435,6 +435,27 @@ func (c *RESTClient) GetIssue(ctx context.Context, key string) (*Issue, error) {
 	}, nil
 }
 
+// IssueKey implements Client. Only the summary field is requested, to keep the
+// response small; the key is always part of the issue resource.
+func (c *RESTClient) IssueKey(ctx context.Context, key string) (string, error) {
+	q := url.Values{}
+	q.Set("fields", "summary")
+	data, err := c.do(ctx, "get issue key", http.MethodGet, c.api("/issue/"+url.PathEscape(key)), q, nil)
+	if err != nil {
+		return "", err
+	}
+	var w struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(data, &w); err != nil {
+		return "", fmt.Errorf("decoding issue key: %w", err)
+	}
+	if w.Key == "" {
+		return "", fmt.Errorf("get issue key: Jira returned no key for %s", key)
+	}
+	return w.Key, nil
+}
+
 // UpdateIssue implements Client.
 func (c *RESTClient) UpdateIssue(ctx context.Context, key string, in UpdateIssueInput) error {
 	fields := map[string]any{}

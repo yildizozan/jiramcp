@@ -21,7 +21,8 @@ func (s *Server) handleGetTicket(ctx context.Context, req mcp.CallToolRequest) (
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	if err := s.requireMappedIssue(key); err != nil {
+	key, err = s.requireMappedIssue(ctx, key)
+	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	issue, err := s.client.GetIssue(ctx, key)

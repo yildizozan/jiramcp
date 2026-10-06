@@ -30,7 +30,8 @@ func (s *Server) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	if err := s.requireMappedIssue(key); err != nil {
+	key, err = s.requireMappedIssue(ctx, key)
+	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -80,7 +81,8 @@ func (s *Server) handleTransition(ctx context.Context, req mcp.CallToolRequest) 
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	if err := s.requireMappedIssue(key); err != nil {
+	key, err = s.requireMappedIssue(ctx, key)
+	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	available, err := s.client.Transitions(ctx, key)

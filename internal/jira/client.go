@@ -189,6 +189,10 @@ type Client interface {
 	CreateMeta(ctx context.Context, projectKey, issueTypeID string) (*CreateMeta, error)
 	// CreateIssue creates an issue and returns its key/id.
 	CreateIssue(ctx context.Context, in CreateIssueInput) (*CreatedIssue, error)
+	// IssueKey returns the current key of an issue. Jira resolves the old key
+	// of a moved issue to the issue in its new project, so this is the key
+	// whose project actually holds the issue.
+	IssueKey(ctx context.Context, key string) (string, error)
 	// GetIssue reads the main fields of an existing issue.
 	GetIssue(ctx context.Context, key string) (*Issue, error)
 	// UpdateIssue edits fields on an existing issue.

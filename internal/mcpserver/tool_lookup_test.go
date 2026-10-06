@@ -51,3 +51,79 @@ func TestGetTicket_ClientErrorSurfaces(t *testing.T) {
 		t.Fatalf("unexpected message: %s", resultText(res))
 	}
 }
+
+// A moved issue keeps answering to its old key, so "PAY-1" can name an issue
+// that now lives in an unmapped project. Every issue-key tool must check the
+// issue's current key, not only the key the caller passed.
+func TestIssueTools_MovedToUnmappedProjectBlocked(t *testing.T) {
+	cases := map[string]struct {
+		call func(*Server, *fakeClient) (bool, bool) // (isError, reachedJira)
+	}{
+		"get_jira_ticket": {func(s *Server, f *fakeClient) (bool, bool) {
+			res, _ := s.handleGetTicket(context.Background(), newReq(map[string]any{"key": "PAY-1"}))
+			return res.IsError, f.gotKey != ""
+		}},
+		"update_jira_ticket": {func(s *Server, f *fakeClient) (bool, bool) {
+			res, _ := s.handleUpdateTicket(context.Background(), newReq(map[string]any{"key": "PAY-1", "summary": "x"}))
+			return res.IsError, f.updated != nil
+		}},
+		"add_comment": {func(s *Server, f *fakeClient) (bool, bool) {
+			res, _ := s.handleAddComment(context.Background(), newReq(map[string]any{"key": "PAY-1", "body": "x"}))
+			return res.IsError, f.commentBody != ""
+		}},
+		"list_comments": {func(s *Server, f *fakeClient) (bool, bool) {
+			res, _ := s.handleListComments(context.Background(), newReq(map[string]any{"key": "PAY-1"}))
+			return res.IsError, f.listedLimit != 0
+		}},
+		"update_comment": {func(s *Server, f *fakeClient) (bool, bool) {
+			res, _ := s.handleUpdateComment(context.Background(), newReq(map[string]any{"key": "PAY-1", "comment_id": "9", "body": "x"}))
+			return res.IsError, f.editedCommentID != ""
+		}},
+		"transition_jira_ticket": {func(s *Server, f *fakeClient) (bool, bool) {
+			res, _ := s.handleTransition(context.Background(), newReq(map[string]any{"key": "PAY-1", "to": "Done"}))
+			return res.IsError, f.appliedID != ""
+		}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := &fakeClient{
+				moved:       map[string]string{"PAY-1": "HR-7"},
+				transitions: []jira.Transition{{ID: "31", Name: "Done", ToName: "Done"}},
+			}
+			isErr, reached := tc.call(newServer(f, testCfg()), f)
+			if !isErr {
+				t.Fatal("expected an issue moved to an unmapped project to be blocked")
+			}
+			if reached {
+				t.Fatal("must not act on an issue that now lives in an unmapped project")
+			}
+		})
+	}
+}
+
+func TestGetTicket_MovedWithinMappingUsesCurrentKey(t *testing.T) {
+	f := &fakeClient{
+		moved: map[string]string{"PAY-1": "PAY-42"},
+		issue: &jira.Issue{Key: "PAY-42", Summary: "s", Status: "Open"},
+	}
+	srv := newServer(f, testCfg())
+	res, _ := srv.handleGetTicket(context.Background(), newReq(map[string]any{"key": "PAY-1"}))
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", resultText(res))
+	}
+	if f.gotKey != "PAY-42" {
+		t.Fatalf("GetIssue should use the current key PAY-42, got %q", f.gotKey)
+	}
+}
+
+func TestGetTicket_IssueKeyErrorSurfaces(t *testing.T) {
+	f := &fakeClient{keyErr: errors.New("get issue key failed: issue does not exist (HTTP 404)")}
+	srv := newServer(f, testCfg())
+	res, _ := srv.handleGetTicket(context.Background(), newReq(map[string]any{"key": "PAY-404"}))
+	if !res.IsError || !strings.Contains(resultText(res), "does not exist") {
+		t.Fatalf("expected the Jira error to be surfaced, got: %s", resultText(res))
+	}
+	if f.gotKey != "" {
+		t.Fatal("must not call GetIssue when the key check fails")
+	}
+}

@@ -24,6 +24,9 @@ type fakeClient struct {
 	created   *jira.CreateIssueInput
 	createErr error
 
+	moved  map[string]string // old issue key -> current key, as Jira resolves it
+	keyErr error
+
 	issue  *jira.Issue
 	gotKey string
 	getErr error
@@ -64,6 +67,15 @@ func (f *fakeClient) CreateIssue(_ context.Context, in jira.CreateIssueInput) (*
 	}
 	f.created = &in
 	return &jira.CreatedIssue{ID: "1000", Key: in.ProjectKey + "-123", URL: "https://jira.yildizozan.com/browse/" + in.ProjectKey + "-123"}, nil
+}
+func (f *fakeClient) IssueKey(_ context.Context, key string) (string, error) {
+	if f.keyErr != nil {
+		return "", f.keyErr
+	}
+	if current, ok := f.moved[key]; ok {
+		return current, nil
+	}
+	return key, nil
 }
 func (f *fakeClient) GetIssue(_ context.Context, key string) (*jira.Issue, error) {
 	f.gotKey = key

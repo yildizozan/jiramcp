@@ -140,7 +140,9 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
 - The team mapping is the authorization boundary for every issue operation:
   `create` only targets mapped projects, and `get`/`update`/`add_comment`/
   `list_comments`/`update_comment`/`transition` reject any issue key whose
-  project is not in the mapping.
+  project is not in the mapping. The check runs on the issue's current key as
+  Jira reports it, so the old key of an issue moved out of a mapped project
+  is rejected too.
 - Editing a comment is authorized by Jira alone: the service account can only
   change what its project permissions allow ('Edit Own Comments' vs 'Edit All
   Comments'). `update_comment` REPLACES the body, so the previous text is kept

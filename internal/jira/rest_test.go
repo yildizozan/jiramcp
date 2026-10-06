@@ -506,3 +506,28 @@ func TestGetIssue_Cloud_ADFDescription(t *testing.T) {
 		t.Fatalf("unexpected issue: %+v", got)
 	}
 }
+
+func TestIssueKey_ReturnsCurrentKey(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"id":"10001","key":"HR-7","fields":{"summary":"moved"}}`, &cap)
+	c := cloudClient(srv.URL)
+
+	key, err := c.IssueKey(context.Background(), "PAY-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key != "HR-7" {
+		t.Fatalf("key = %q, want HR-7", key)
+	}
+	if cap.method != http.MethodGet || cap.path != "/rest/api/3/issue/PAY-1" || cap.rawQ != "fields=summary" {
+		t.Fatalf("unexpected request: %s %s?%s", cap.method, cap.path, cap.rawQ)
+	}
+}
+
+func TestIssueKey_EmptyKeyIsAnError(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{}`, &cap)
+	if _, err := dcClient(srv.URL).IssueKey(context.Background(), "PAY-1"); err == nil {
+		t.Fatal("expected an error when Jira returns no key")
+	}
+}

@@ -25,7 +25,8 @@ func (s *Server) handleAddComment(ctx context.Context, req mcp.CallToolRequest) 
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	if err := s.requireMappedIssue(key); err != nil {
+	key, err = s.requireMappedIssue(ctx, key)
+	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	body, err := req.RequireString("body")
@@ -58,7 +59,8 @@ func (s *Server) handleListComments(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	if err := s.requireMappedIssue(key); err != nil {
+	key, err = s.requireMappedIssue(ctx, key)
+	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	limit := req.GetInt("limit", defaultCommentLimit)
@@ -86,7 +88,8 @@ func (s *Server) handleUpdateComment(ctx context.Context, req mcp.CallToolReques
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	if err := s.requireMappedIssue(key); err != nil {
+	key, err = s.requireMappedIssue(ctx, key)
+	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	commentID, err := req.RequireString("comment_id")
