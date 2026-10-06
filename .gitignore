@@ -11,3 +11,9 @@ coverage*
 
 # Real deploy values (company-specific); provide your own, keep it out of the repo.
 /mcp.values.yaml
+
+# SonarScanner work directory.
+.scannerwork/
+
+# Personal MCP client config (local tooling, not part of the project).
+/.mcp.json
