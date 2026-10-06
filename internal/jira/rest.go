@@ -360,6 +360,81 @@ func (c *RESTClient) CreateIssue(ctx context.Context, in CreateIssueInput) (*Cre
 	return &out, nil
 }
 
+// issueFields is the field list GetIssue requests, so Jira does not send every
+// custom field on the issue.
+const issueFields = "summary,description,status,issuetype,priority,assignee,reporter," +
+	"labels,components,duedate,parent,created,updated"
+
+// named is the {"name": ...} shape Jira uses for status, priority, etc.
+type named struct {
+	Name string `json:"name"`
+}
+
+// person is the part of a Jira user object GetIssue reports.
+type person struct {
+	DisplayName string `json:"displayName"`
+}
+
+// GetIssue implements Client. Optional fields Jira returns as null (assignee,
+// priority, parent) decode to empty strings.
+func (c *RESTClient) GetIssue(ctx context.Context, key string) (*Issue, error) {
+	q := url.Values{}
+	q.Set("fields", issueFields)
+	data, err := c.do(ctx, "get issue", http.MethodGet, c.api("/issue/"+url.PathEscape(key)), q, nil)
+	if err != nil {
+		return nil, err
+	}
+	var w struct {
+		Key    string `json:"key"`
+		Fields struct {
+			Summary     string          `json:"summary"`
+			Description json.RawMessage `json:"description"`
+			Status      named           `json:"status"`
+			IssueType   named           `json:"issuetype"`
+			Priority    named           `json:"priority"`
+			Assignee    person          `json:"assignee"`
+			Reporter    person          `json:"reporter"`
+			Labels      []string        `json:"labels"`
+			Components  []named         `json:"components"`
+			DueDate     string          `json:"duedate"`
+			Parent      struct {
+				Key string `json:"key"`
+			} `json:"parent"`
+			Created string `json:"created"`
+			Updated string `json:"updated"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(data, &w); err != nil {
+		return nil, fmt.Errorf("decoding issue: %w", err)
+	}
+	f := w.Fields
+	components := make([]string, 0, len(f.Components))
+	for _, comp := range f.Components {
+		components = append(components, comp.Name)
+	}
+	labels := f.Labels
+	if labels == nil {
+		labels = []string{}
+	}
+	return &Issue{
+		Key:         w.Key,
+		Summary:     f.Summary,
+		Description: decodeRichText(f.Description),
+		Status:      f.Status.Name,
+		IssueType:   f.IssueType.Name,
+		Priority:    f.Priority.Name,
+		Assignee:    f.Assignee.DisplayName,
+		Reporter:    f.Reporter.DisplayName,
+		Labels:      labels,
+		Components:  components,
+		DueDate:     f.DueDate,
+		Parent:      f.Parent.Key,
+		Created:     f.Created,
+		Updated:     f.Updated,
+		URL:         c.browseURL(w.Key),
+	}, nil
+}
+
 // UpdateIssue implements Client.
 func (c *RESTClient) UpdateIssue(ctx context.Context, key string, in UpdateIssueInput) error {
 	fields := map[string]any{}
@@ -411,7 +486,7 @@ type wireComment struct {
 func (c *RESTClient) toComment(w wireComment, key string) Comment {
 	return Comment{
 		ID:      w.ID,
-		Body:    decodeCommentBody(w.Body),
+		Body:    decodeRichText(w.Body),
 		Author:  w.Author.DisplayName,
 		Created: w.Created,
 		Updated: w.Updated,
@@ -419,10 +494,11 @@ func (c *RESTClient) toComment(w wireComment, key string) Comment {
 	}
 }
 
-// decodeCommentBody renders a raw comment body as plain text, accepting either
-// dialect's representation. An unrecognized shape yields an empty string rather
-// than an error: a comment we cannot render is still worth listing by id.
-func decodeCommentBody(raw json.RawMessage) string {
+// decodeRichText renders a raw rich-text field (comment body, description) as
+// plain text, accepting either dialect's representation. An unrecognized shape
+// or JSON null yields an empty string rather than an error: an issue or comment
+// we cannot render is still worth returning.
+func decodeRichText(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}

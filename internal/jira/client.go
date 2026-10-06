@@ -147,6 +147,27 @@ type Comment struct {
 	URL     string `json:"-"`       // browse URL of the parent issue
 }
 
+// Issue is a read view of an existing issue. Description is plain text, like
+// Comment.Body: the Cloud ADF tree is flattened, the Server/DC string is kept.
+// People are reported by display name.
+type Issue struct {
+	Key         string   `json:"key"`
+	Summary     string   `json:"summary"`
+	Description string   `json:"description"`
+	Status      string   `json:"status"`
+	IssueType   string   `json:"issueType"`
+	Priority    string   `json:"priority,omitempty"`
+	Assignee    string   `json:"assignee,omitempty"`
+	Reporter    string   `json:"reporter,omitempty"`
+	Labels      []string `json:"labels"`
+	Components  []string `json:"components"`
+	DueDate     string   `json:"dueDate,omitempty"`
+	Parent      string   `json:"parent,omitempty"` // parent issue key
+	Created     string   `json:"created"`          // Jira timestamp, as returned
+	Updated     string   `json:"updated"`          // Jira timestamp, as returned
+	URL         string   `json:"url"`
+}
+
 // Transition is an available workflow transition for an issue.
 type Transition struct {
 	ID     string `json:"id"`
@@ -168,6 +189,8 @@ type Client interface {
 	CreateMeta(ctx context.Context, projectKey, issueTypeID string) (*CreateMeta, error)
 	// CreateIssue creates an issue and returns its key/id.
 	CreateIssue(ctx context.Context, in CreateIssueInput) (*CreatedIssue, error)
+	// GetIssue reads the main fields of an existing issue.
+	GetIssue(ctx context.Context, key string) (*Issue, error)
 	// UpdateIssue edits fields on an existing issue.
 	UpdateIssue(ctx context.Context, key string, in UpdateIssueInput) error
 	// AddComment appends a comment to an existing issue.

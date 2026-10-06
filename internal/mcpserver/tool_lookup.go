@@ -8,6 +8,30 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// getTicketTool reads an existing issue.
+func getTicketTool() mcp.Tool {
+	return mcp.NewTool("get_jira_ticket",
+		mcp.WithDescription("Read an existing Jira issue: summary, description (plain text), status, type, priority, assignee, reporter, labels, components, due date, parent and timestamps. Use list_comments for its comments."),
+		mcp.WithString("key", mcp.Required(), mcp.Description("Issue key, e.g. DOSD-1036.")),
+	)
+}
+
+func (s *Server) handleGetTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	key, err := req.RequireString("key")
+	if err != nil {
+		return mcp.NewToolResultError("key is required"), nil
+	}
+	if err := s.requireMappedIssue(key); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	issue, err := s.client.GetIssue(ctx, key)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	return mcp.NewToolResultStructured(map[string]any{"issue": issue},
+		fmt.Sprintf("%s [%s] %s: %s", issue.Key, issue.Status, issue.Summary, issue.URL)), nil
+}
+
 func searchUsersTool() mcp.Tool {
 	return mcp.NewTool("search_users",
 		mcp.WithDescription("Search Jira users by name or email. Returns `id`, the identifier to pass as reporter/assignee: an accountId on Cloud, a username on Server/Data Center."),

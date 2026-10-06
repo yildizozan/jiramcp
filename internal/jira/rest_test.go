@@ -450,3 +450,59 @@ func TestUpdateComment_PermissionDeniedSurfaces(t *testing.T) {
 		t.Fatalf("403 should surface as an actionable permission error, got %q", err.Error())
 	}
 }
+
+// GetIssue must request only the fields it reports, and flatten the DC string
+// description as-is; null optional fields decode to empty values.
+func TestGetIssue_DC_PathFieldsAndNulls(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"key":"DOSD-1","fields":{
+		"summary":"Broken build","description":"line one\nline two",
+		"status":{"name":"Open"},"issuetype":{"name":"Bug"},"priority":null,
+		"assignee":null,"reporter":{"displayName":"Ozan"},"labels":[],
+		"components":[{"name":"api"}],"duedate":null,"parent":null,
+		"created":"2026-10-01T10:00:00.000+0300","updated":"2026-10-02T10:00:00.000+0300"}}`, &cap)
+
+	got, err := dcClient(srv.URL).GetIssue(context.Background(), "DOSD-1")
+	if err != nil {
+		t.Fatalf("get issue: %v", err)
+	}
+	if cap.method != "GET" || cap.path != "/rest/api/2/issue/DOSD-1" {
+		t.Fatalf("DC get path: %s %s", cap.method, cap.path)
+	}
+	if !contains(cap.rawQ, "fields=summary%2Cdescription") {
+		t.Fatalf("expected a restricted field list, got query %q", cap.rawQ)
+	}
+	if got.Summary != "Broken build" || got.Description != "line one\nline two" ||
+		got.Status != "Open" || got.IssueType != "Bug" || got.Reporter != "Ozan" {
+		t.Fatalf("unexpected issue: %+v", got)
+	}
+	if got.Assignee != "" || got.Priority != "" || got.Parent != "" || got.DueDate != "" {
+		t.Fatalf("null fields must decode empty: %+v", got)
+	}
+	if len(got.Components) != 1 || got.Components[0] != "api" || got.Labels == nil {
+		t.Fatalf("unexpected components/labels: %+v", got)
+	}
+	if got.URL != srv.URL+"/browse/DOSD-1" {
+		t.Fatalf("unexpected URL %q", got.URL)
+	}
+}
+
+func TestGetIssue_Cloud_ADFDescription(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"key":"PAY-7","fields":{"summary":"s",
+		"description":{"type":"doc","version":1,"content":[
+			{"type":"paragraph","content":[{"type":"text","text":"from cloud"}]}]},
+		"status":{"name":"Done"},"issuetype":{"name":"Task"},
+		"assignee":{"displayName":"Jane"},"parent":{"key":"PAY-1"},"labels":["x"]}}`, &cap)
+
+	got, err := cloudClient(srv.URL).GetIssue(context.Background(), "PAY-7")
+	if err != nil {
+		t.Fatalf("get issue: %v", err)
+	}
+	if cap.path != "/rest/api/3/issue/PAY-7" {
+		t.Fatalf("cloud get must use v3, got %q", cap.path)
+	}
+	if got.Description != "from cloud" || got.Assignee != "Jane" || got.Parent != "PAY-1" {
+		t.Fatalf("unexpected issue: %+v", got)
+	}
+}

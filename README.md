@@ -26,6 +26,7 @@ as the service account.
 | Tool | Purpose |
 |---|---|
 | `create_jira_ticket` | Create a ticket for a `team` (or explicit `project`) with `reporter` set to a named person. |
+| `get_jira_ticket` | Read an existing issue: summary, description (plain text), status, type, priority, people, labels, components, dates, parent. |
 | `update_jira_ticket` | Edit fields (summary, description, assignee, priority, labels, components, due date) on an existing issue. |
 | `add_comment` | Add a comment to an existing issue. |
 | `list_comments` | List the newest comments on an issue (oldest first), with the `id` needed to edit one. |
@@ -137,7 +138,7 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
 - Credentials are only ever read from the environment (injected from a Secret);
   they are never logged (the startup config dump is redacted).
 - The team mapping is the authorization boundary for every issue operation:
-  `create` only targets mapped projects, and `update`/`add_comment`/
+  `create` only targets mapped projects, and `get`/`update`/`add_comment`/
   `list_comments`/`update_comment`/`transition` reject any issue key whose
   project is not in the mapping.
 - Editing a comment is authorized by Jira alone: the service account can only

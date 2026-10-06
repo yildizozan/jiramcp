@@ -17,10 +17,11 @@ func projectKeyFromIssueKey(issueKey string) string {
 	return issueKey[:i]
 }
 
-// requireMappedIssue applies, to the issue-key tools (update/comment/transition),
-// the same project restriction that create enforces: the issue must live in a
-// project reachable via the team mapping. The curated mapping is the
-// authorization boundary for every mutation, not merely routing for create.
+// requireMappedIssue applies, to the issue-key tools (get/update/comment/
+// transition), the same project restriction that create enforces: the issue
+// must live in a project reachable via the team mapping. The curated mapping is
+// the authorization boundary for every issue operation, not merely routing for
+// create.
 func (s *Server) requireMappedIssue(issueKey string) error {
 	proj := projectKeyFromIssueKey(issueKey)
 	if proj == "" {

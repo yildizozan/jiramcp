@@ -47,6 +47,7 @@ func New(cfg *config.Config, client jira.Client, logger *slog.Logger, version st
 		server.WithRecovery(),
 	)
 	s.mcp.AddTool(createTicketTool(), s.handleCreateTicket)
+	s.mcp.AddTool(getTicketTool(), s.handleGetTicket)
 	s.mcp.AddTool(updateTicketTool(), s.handleUpdateTicket)
 	s.mcp.AddTool(addCommentTool(), s.handleAddComment)
 	s.mcp.AddTool(listCommentsTool(), s.handleListComments)
