@@ -58,7 +58,7 @@ accountId, or email/name resolved to exactly one active user), `team` and/or
 | `MCP_HTTP_PATH` | no | `/mcp` | MCP endpoint path |
 | `MCP_AUTH_TOKEN` | http | — | Bearer token required to call the HTTP endpoint |
 | `MCP_ALLOW_UNAUTHENTICATED` | no | `false` | Disable HTTP auth (dev only) |
-| `HTTP_HEALTH_ADDR` | no | `:8081` | Health/readiness listen address |
+| `HTTP_HEALTH_ADDR` | no | `:8081` | Health/readiness listen address (`http` mode only) |
 | `LOG_LEVEL` | no | `info` | `debug`/`info`/`warn`/`error` |
 | `LOG_FORMAT` | no | `json` | `json` or `text` |
 
@@ -98,7 +98,8 @@ over stdio, `jiramcp http` serves streamable HTTP. The Docker image defaults to
 
 In `http` mode the server requires `MCP_AUTH_TOKEN` (or set
 `MCP_ALLOW_UNAUTHENTICATED=true` for local dev only). Health/readiness are on
-`HTTP_HEALTH_ADDR` (`/healthz`, `/readyz`).
+`HTTP_HEALTH_ADDR` (`/healthz`, `/readyz`); the health server runs only in
+`http` mode, so several stdio instances can run side by side.
 
 ## Container
 

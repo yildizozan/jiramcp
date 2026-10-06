@@ -8,6 +8,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -95,25 +97,17 @@ func run(ctx context.Context, transport config.Transport) error {
 	}
 	logger.Info("jira credentials ok", "accountId", me.AccountID, "displayName", me.DisplayName)
 
-	// Health server with cached readiness (background probe loop).
-	checker := health.NewChecker(
-		func(ctx context.Context) error { _, e := client.Myself(ctx); return e },
-		30*time.Second, cfg.HTTPTimeout, logger,
-	)
-	go checker.Run(ctx)
-
-	healthSrv := &http.Server{Addr: cfg.HealthAddr, Handler: checker.Handler()}
-	go func() {
-		logger.Info("starting health server", "addr", cfg.HealthAddr)
-		if err := healthSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("health server failed", "error", err)
+	// Health and readiness only matter to an orchestrator probing the HTTP
+	// service. A stdio server is a child process of one MCP client; opening a
+	// port there would only collide when several clients run it at once.
+	if cfg.Transport == config.TransportHTTP {
+		probe := func(ctx context.Context) error { _, e := client.Myself(ctx); return e }
+		shutdown, err := startHealth(ctx, cfg.HealthAddr, probe, cfg.HTTPTimeout, logger)
+		if err != nil {
+			return err
 		}
-	}()
-	defer func() {
-		sctx, c := context.WithTimeout(context.Background(), 5*time.Second)
-		defer c()
-		_ = healthSrv.Shutdown(sctx)
-	}()
+		defer shutdown()
+	}
 
 	srv := mcpserver.New(cfg, client, logger, version)
 
@@ -123,4 +117,31 @@ func run(ctx context.Context, transport config.Transport) error {
 	default:
 		return srv.RunHTTP(ctx)
 	}
+}
+
+// startHealth serves /healthz and /readyz on addr, with readiness cached by a
+// background probe loop. The listener is opened before it returns, so a busy
+// port fails startup instead of leaving the probes unanswered. shutdown stops
+// the server.
+func startHealth(ctx context.Context, addr string, probe func(context.Context) error,
+	timeout time.Duration, logger *slog.Logger) (shutdown func(), err error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("health server: %w", err)
+	}
+	checker := health.NewChecker(probe, 30*time.Second, timeout, logger)
+	go checker.Run(ctx)
+
+	srv := &http.Server{Handler: checker.Handler(), ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		logger.Info("starting health server", "addr", ln.Addr().String())
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			logger.Error("health server failed", "error", err)
+		}
+	}()
+	return func() {
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(sctx)
+	}, nil
 }

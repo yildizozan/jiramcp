@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"io"
+	"log/slog"
+	"net"
+	"net/http"
 	"testing"
+	"time"
 
 	"jiramcp/internal/config"
 )
@@ -47,5 +51,48 @@ func TestRootCmd_RejectsUnknownInput(t *testing.T) {
 		if err := cmd.ExecuteContext(context.Background()); err == nil {
 			t.Fatalf("args %q: expected an error", args)
 		}
+	}
+}
+
+func discardLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
+
+func okProbe(context.Context) error { return nil }
+
+func TestStartHealth_ServesProbes(t *testing.T) {
+	// Reserve a free port, then hand it to startHealth.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	shutdown, err := startHealth(ctx, addr, okProbe, time.Second, discardLogger())
+	if err != nil {
+		t.Fatalf("startHealth: %v", err)
+	}
+	defer shutdown()
+
+	resp, err := http.Get("http://" + addr + "/healthz")
+	if err != nil {
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/healthz status = %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestStartHealth_BusyPortFails(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	if _, err := startHealth(context.Background(), ln.Addr().String(), okProbe, time.Second, discardLogger()); err == nil {
+		t.Fatal("expected an error when the health port is already in use")
 	}
 }
