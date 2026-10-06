@@ -1,9 +1,13 @@
 # syntax=docker/dockerfile:1
 
+# Base images are pinned by digest so a build is reproducible and a changed
+# upstream image cannot slip in unnoticed. Dependabot proposes digest bumps
+# (.github/dependabot.yml); to bump by hand: crane digest cgr.dev/chainguard/<image>:latest
+
 # ---- build ----
 # Chainguard's Wolfi-based Go toolchain image. Build as root so the BuildKit
 # cache mounts (/go, /root/.cache) are writable; this stage is not shipped.
-FROM cgr.dev/chainguard/go:latest AS build
+FROM cgr.dev/chainguard/go:latest@sha256:86536f93eb6f89f55d3b6970c5957b332c40da7496d4296ca74c9767250b9a54 AS build
 USER root
 WORKDIR /src
 ENV CGO_ENABLED=0 GOOS=linux GOPATH=/go GOCACHE=/root/.cache/go-build
@@ -24,7 +28,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # ---- runtime ----
 # Chainguard's minimal static base (distroless-style): no shell/package manager,
 # ships ca-certificates + tzdata, and defaults to the nonroot user 65532.
-FROM cgr.dev/chainguard/static:latest
+FROM cgr.dev/chainguard/static:latest@sha256:fe55470f22d3259488d9d3739168d8f04da67755f0b69382bc26eda4a7d3d327
 WORKDIR /
 COPY --from=build /out/jiramcp /jiramcp
 USER 65532:65532
