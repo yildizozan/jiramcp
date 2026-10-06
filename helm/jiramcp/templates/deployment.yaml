@@ -72,8 +72,20 @@ spec:
               value: {{ .Values.jira.defaultIssueType | quote }}
             - name: JIRA_HTTP_TIMEOUT
               value: {{ .Values.jira.httpTimeout | quote }}
+            {{- if include "jiramcp.hasMapping" . }}
             - name: JIRA_TEAM_MAPPING_FILE
               value: /etc/jiramcp/team-mapping.yaml
+            {{- end }}
+            {{- with .Values.jira.projects }}
+            - name: JIRA_PROJECTS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.jira.defaultProject }}
+            - name: JIRA_DEFAULT_PROJECT
+              value: {{ . | quote }}
+            {{- end }}
+            - name: MCP_AUTH_MODE
+              value: {{ .Values.mcp.authMode | quote }}
             - name: MCP_HTTP_ADDR
               value: ":{{ .Values.service.containerPort }}"
             - name: MCP_HTTP_PATH
@@ -86,6 +98,7 @@ spec:
               value: {{ .Values.logging.level | quote }}
             - name: LOG_FORMAT
               value: {{ .Values.logging.format | quote }}
+            {{- if include "jiramcp.usesServiceAccount" . }}
             {{- if eq .Values.jira.authMode "cloud" }}
             - name: JIRA_AUTH_EMAIL
               valueFrom:
@@ -104,7 +117,8 @@ spec:
                   name: {{ include "jiramcp.secretName" . }}
                   key: {{ .Values.jira.secretKeys.pat }}
             {{- end }}
-            {{- if and (eq .Values.mcp.transport "http") (not .Values.mcp.allowUnauthenticated) }}
+            {{- end }}
+            {{- if and (eq .Values.mcp.transport "http") (eq .Values.mcp.authMode "token") (not .Values.mcp.allowUnauthenticated) }}
             - name: MCP_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -135,15 +149,19 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if include "jiramcp.hasMapping" . }}
             - name: team-mapping
               mountPath: /etc/jiramcp
               readOnly: true
+            {{- end }}
             - name: tmp
               mountPath: /tmp
       volumes:
+        {{- if include "jiramcp.hasMapping" . }}
         - name: team-mapping
           configMap:
             name: {{ include "jiramcp.fullname" . }}
+        {{- end }}
         - name: tmp
           emptyDir: {}
       {{- with .Values.nodeSelector }}

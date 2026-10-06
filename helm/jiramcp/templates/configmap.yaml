@@ -1,3 +1,4 @@
+{{- if include "jiramcp.hasMapping" . }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,3 +8,4 @@ metadata:
 data:
   team-mapping.yaml: |
 {{ .Values.teamMapping.inlineYaml | indent 4 }}
+{{- end }}

@@ -4,12 +4,14 @@ Transport:        {{ .Values.mcp.transport }}
 Jira base URL:    {{ .Values.jira.baseUrl }}
 Auth mode:        {{ .Values.jira.authMode }}
 HTTP MCP path:    {{ .Values.mcp.httpPath }}
-Authenticated:    {{ not .Values.mcp.allowUnauthenticated }}
+Caller auth:      {{ .Values.mcp.authMode }}{{ if eq .Values.mcp.authMode "jira" }} (callers send their own Jira credentials){{ end }}
+Authenticated:    {{ or (eq .Values.mcp.authMode "jira") (not .Values.mcp.allowUnauthenticated) }}
 
 In-cluster MCP endpoint:
   http://{{ include "jiramcp.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}{{ .Values.mcp.httpPath }}
 
-Smoke test from a debug pod (replace $TOKEN with the MCP bearer token):
+Smoke test from a debug pod (replace $TOKEN with the MCP bearer token, or in
+authMode=jira with your own Jira PAT):
   curl -sS -X POST \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \

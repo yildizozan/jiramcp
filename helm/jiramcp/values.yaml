@@ -20,7 +20,14 @@ jira:
   authMode: cloud             # cloud (email+token) | dc (PAT)
   defaultIssueType: Task
   httpTimeout: 15s
+  # Optional comma-separated project allow-list (JIRA_PROJECTS), e.g. "PAY,DOSD".
+  # Token mode needs this or a team mapping to bound the service account.
+  projects: ""
+  # Optional project used by create when no project/team is given.
+  defaultProject: ""
 
+  # Service-account credentials, used in mcp.authMode=token only; in
+  # mcp.authMode=jira every caller brings their own and none are needed here.
   # Provide credentials either via an existing Secret (recommended, works with
   # External Secrets Operator) or have the chart create one from the values
   # below. Never commit real secrets to values.yaml.
@@ -37,7 +44,9 @@ jira:
     pat: ""
 
 # Team -> project routing (YAML). Rendered into a ConfigMap and mounted as a
-# file; the app reads it via JIRA_TEAM_MAPPING_FILE.
+# file; the app reads it via JIRA_TEAM_MAPPING_FILE. Optional: set it to ""
+# to run without a mapping (then jira.projects, or in mcp.authMode=jira the
+# callers' own Jira permissions, bound the projects).
 teamMapping:
   inlineYaml: |
     teams:
@@ -52,6 +61,13 @@ teamMapping:
 mcp:
   transport: http             # http | stdio (passed as the container subcommand)
   httpPath: /mcp
+  # How HTTP callers authenticate:
+  #   token - one shared bearer token (authToken); Jira is called as the
+  #           service account from jira.secret / jira.existingSecret.
+  #   jira  - each caller sends their own Jira credentials (Authorization:
+  #           Bearer <PAT> on dc, Basic email:token on cloud) and the server
+  #           acts as them. No service-account credentials or authToken.
+  authMode: token
   # Bearer token required to call the HTTP endpoint. Strongly recommended.
   # Sourced from the Secret (key MCP_AUTH_TOKEN) like other credentials.
   authToken: ""               # used only when existingSecret is empty

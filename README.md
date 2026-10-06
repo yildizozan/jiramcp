@@ -58,7 +58,8 @@ with your own token, where it defaults to you), `team` and/or `project`, `issue_
 | `JIRA_HTTP_TIMEOUT` | no | `15s` | Per-request timeout |
 | `MCP_HTTP_ADDR` | no | `:8080` | HTTP listen address |
 | `MCP_HTTP_PATH` | no | `/mcp` | MCP endpoint path |
-| `MCP_AUTH_TOKEN` | http | — | Bearer token required to call the HTTP endpoint |
+| `MCP_AUTH_MODE` | no | `token` | HTTP caller auth: `token` (shared token, service account) or `jira` (each caller's own Jira credentials) |
+| `MCP_AUTH_TOKEN` | http `token` | — | Bearer token required to call the HTTP endpoint |
 | `MCP_ALLOW_UNAUTHENTICATED` | no | `false` | Disable HTTP auth (dev only) |
 | `HTTP_HEALTH_ADDR` | no | `:8081` | Health/readiness listen address (`http` mode only) |
 | `LOG_LEVEL` | no | `info` | `debug`/`info`/`warn`/`error` |
@@ -129,7 +130,28 @@ The subcommand selects the transport: `jiramcp` or `jiramcp stdio` serves MCP
 over stdio, `jiramcp http` serves streamable HTTP. The Docker image defaults to
 `http`; the Helm chart passes `mcp.transport` as the subcommand.
 
-In `http` mode the server requires `MCP_AUTH_TOKEN` (or set
+### HTTP caller authentication
+
+`MCP_AUTH_MODE` picks how the `http` service treats its callers:
+
+| Mode | Caller sends | Jira is called as | Projects |
+|---|---|---|---|
+| `token` (default) | `Authorization: Bearer $MCP_AUTH_TOKEN` | the service account | `JIRA_PROJECTS` or the team mapping (required) |
+| `jira` | their own Jira credentials: `Bearer <PAT>` on Server/DC, `Basic base64(email:api_token)` on Cloud | the caller | the caller's Jira permissions, narrowed by `JIRA_PROJECTS`/mapping if set |
+
+In `jira` mode the server holds no Jira credentials and no `MCP_AUTH_TOKEN`;
+set `JIRA_AUTH_MODE` explicitly (`dc` or `cloud`). Each caller's credentials
+are checked with Jira (`/myself`) and the result is cached for 5 minutes by a
+SHA-256 of the header, so a revoked token stops working within that time.
+Tickets default to the caller as reporter. Register it in a client with the
+caller's own PAT, e.g.:
+
+```bash
+claude mcp add --transport http jiramcp https://jiramcp.example.com/mcp \
+  --header "Authorization: Bearer <your Jira PAT>"
+```
+
+In `token` mode the server requires `MCP_AUTH_TOKEN` (or set
 `MCP_ALLOW_UNAUTHENTICATED=true` for local dev only). Health/readiness are on
 `HTTP_HEALTH_ADDR` (`/healthz`, `/readyz`); the health server runs only in
 `http` mode, so several stdio instances can run side by side.
@@ -152,7 +174,10 @@ helm install jiramcp helm/jiramcp \
   --set-file teamMapping.inlineYaml=examples/team-mapping.yaml
 ```
 
-The recommended pattern is `jira.existingSecret` (works with the External
+Set `mcp.authMode=jira` (with `jira.authMode=dc`) to let every caller use their
+own PAT; the chart then creates no Secret, and `teamMapping.inlineYaml=""` drops
+the mapping so the callers' Jira permissions alone bound them. Otherwise the
+recommended pattern is `jira.existingSecret` (works with the External
 Secrets Operator) holding keys `JIRA_AUTH_EMAIL`, `JIRA_API_TOKEN` (or
 `JIRA_PAT`) and `MCP_AUTH_TOKEN`. Alternatively let the chart create the Secret
 from `jira.secret.*` / `mcp.authToken` (never commit real values).
@@ -169,13 +194,18 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
 - The HTTP MCP endpoint creates Jira issues and exposes user search — never
   expose it unauthenticated. Prefer OIDC/mTLS at the ingress/gateway in
   addition to the bearer token.
-- The server does not know who calls it. One shared `MCP_AUTH_TOKEN` grants
+- In `token` mode the server does not know who calls it. One shared `MCP_AUTH_TOKEN` grants
   every caller the same rights, and `reporter` is taken from the tool input
   as given: anyone holding the token can file a ticket on behalf of any active
   user, and the logs record the reporter, not the caller. Treat the token as a
   service credential, give it only to trusted MCP clients, and rotate it when
   a client leaves. If you need per-caller accountability, put an identity-aware
-  proxy (OIDC) in front of the endpoint and keep its access logs.
+  proxy (OIDC) in front of the endpoint and keep its access logs, or use
+  `jira` mode, where every call runs as the caller.
+- In `jira` mode the server sees each caller's Jira credentials. They are
+  never logged or echoed in errors, the cache keys on a hash, and `JIRA_BASE_URL`
+  always comes from configuration, never from the caller. Serve it over TLS
+  only.
 - Credentials are only ever read from the environment (injected from a Secret);
   they are never logged (the startup config dump is redacted).
 - The project policy ([Project access](#project-access)) is the authorization

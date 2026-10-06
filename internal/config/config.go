@@ -34,6 +34,20 @@ const (
 	TransportStdio Transport = "stdio"
 )
 
+// MCPAuth selects how the HTTP endpoint authenticates its callers and whose
+// Jira credentials it acts with.
+type MCPAuth string
+
+const (
+	// MCPAuthToken checks one shared bearer token (MCP_AUTH_TOKEN) and acts
+	// with the server's own service-account credentials.
+	MCPAuthToken MCPAuth = "token"
+	// MCPAuthJira takes each caller's own Jira credentials from the
+	// Authorization header (Bearer PAT on Server/DC, Basic email:token on
+	// Cloud) and acts as that caller.
+	MCPAuthJira MCPAuth = "jira"
+)
+
 // Config is the fully validated runtime configuration.
 type Config struct {
 	// Jira connection.
@@ -59,6 +73,8 @@ type Config struct {
 	HTTPAddr  string
 	HTTPPath  string
 
+	// MCPAuth is the HTTP caller authentication mode (MCP_AUTH_MODE).
+	MCPAuth MCPAuth
 	// AuthToken is the static bearer token required to call the HTTP MCP
 	// endpoint. Required when Transport==http unless AllowUnauthenticated.
 	AuthToken string
@@ -89,6 +105,7 @@ func Load(transport Transport) (*Config, error) {
 		Transport:            transport,
 		HTTPAddr:             env("MCP_HTTP_ADDR", ":8080"),
 		HTTPPath:             env("MCP_HTTP_PATH", "/mcp"),
+		MCPAuth:              MCPAuth(strings.ToLower(strings.TrimSpace(env("MCP_AUTH_MODE", string(MCPAuthToken))))),
 		AuthToken:            env("MCP_AUTH_TOKEN", ""),
 		AllowUnauthenticated: envBool("MCP_ALLOW_UNAUTHENTICATED", false),
 		HealthAddr:           env("HTTP_HEALTH_ADDR", ":8081"),
@@ -102,8 +119,10 @@ func Load(transport Transport) (*Config, error) {
 	}
 	c.HTTPTimeout = timeout
 
-	// Infer auth mode when not set explicitly: a PAT implies Data Center.
-	if c.AuthMode == "" {
+	// Infer auth mode when not set explicitly: a PAT implies Data Center. A
+	// server acting with its callers' credentials holds no PAT to infer from,
+	// so there the dialect must be explicit (checked in validate).
+	if c.AuthMode == "" && !c.ActsAsCaller() {
 		if c.PAT != "" {
 			c.AuthMode = AuthDC
 		} else {
@@ -132,24 +151,31 @@ func (c *Config) validate() error {
 		return fmt.Errorf("JIRA_BASE_URL must be an absolute http(s) URL, got %q", c.BaseURL)
 	}
 
-	switch c.AuthMode {
-	case AuthCloud:
-		if c.AuthEmail == "" || c.APIToken == "" {
+	if c.AuthMode != AuthCloud && c.AuthMode != AuthDC {
+		return fmt.Errorf("JIRA_AUTH_MODE must be %q or %q, got %q", AuthCloud, AuthDC, c.AuthMode)
+	}
+	// A server acting with its callers' credentials holds none of its own.
+	if !c.ActsAsCaller() {
+		if c.AuthMode == AuthCloud && (c.AuthEmail == "" || c.APIToken == "") {
 			return fmt.Errorf("cloud auth requires JIRA_AUTH_EMAIL and JIRA_API_TOKEN")
 		}
-	case AuthDC:
-		if c.PAT == "" {
+		if c.AuthMode == AuthDC && c.PAT == "" {
 			return fmt.Errorf("dc auth requires JIRA_PAT")
 		}
-	default:
-		return fmt.Errorf("JIRA_AUTH_MODE must be %q or %q, got %q", AuthCloud, AuthDC, c.AuthMode)
 	}
 
 	switch c.Transport {
 	case TransportHTTP:
-		if c.AuthToken == "" && !c.AllowUnauthenticated {
-			return fmt.Errorf("MCP_AUTH_TOKEN is required for http transport; " +
-				"set MCP_ALLOW_UNAUTHENTICATED=true only for local development")
+		switch c.MCPAuth {
+		case MCPAuthToken:
+			if c.AuthToken == "" && !c.AllowUnauthenticated {
+				return fmt.Errorf("MCP_AUTH_TOKEN is required for http transport; " +
+					"set MCP_ALLOW_UNAUTHENTICATED=true only for local development")
+			}
+		case MCPAuthJira:
+			// Callers authenticate with their own Jira credentials.
+		default:
+			return fmt.Errorf("MCP_AUTH_MODE must be %q or %q, got %q", MCPAuthToken, MCPAuthJira, c.MCPAuth)
 		}
 	case TransportStdio:
 		// no network exposure; auth not applicable.
@@ -167,11 +193,12 @@ func (c *Config) validate() error {
 // default project.
 func (c *Config) validateProjects() error {
 	mapped := c.Teams.ProjectKeyList()
-	// The HTTP endpoint acts as one shared service account, so it must not
-	// reach every project that account can see: one of the two lists must
-	// bound it. A local stdio server acts as its user, and Jira's own
-	// permissions bound it.
-	if c.Transport == TransportHTTP && len(mapped) == 0 && len(c.Projects) == 0 {
+	// The token-mode HTTP endpoint acts as one shared service account, so it
+	// must not reach every project that account can see: one of the two lists
+	// must bound it. A local stdio server, or an HTTP server acting with each
+	// caller's own credentials, acts as its user, and Jira's own permissions
+	// bound it.
+	if c.Transport == TransportHTTP && !c.ActsAsCaller() && len(mapped) == 0 && len(c.Projects) == 0 {
 		return fmt.Errorf("http transport needs JIRA_PROJECTS or a team mapping " +
 			"(JIRA_TEAM_MAPPING_YAML / JIRA_TEAM_MAPPING_FILE) to bound the projects it may use")
 	}
@@ -187,6 +214,12 @@ func (c *Config) validateProjects() error {
 		return fmt.Errorf("JIRA_DEFAULT_PROJECT %q is not an allowed project", c.DefaultProject)
 	}
 	return nil
+}
+
+// ActsAsCaller reports whether the HTTP server uses each caller's own Jira
+// credentials instead of holding its own.
+func (c *Config) ActsAsCaller() bool {
+	return c.Transport == TransportHTTP && c.MCPAuth == MCPAuthJira
 }
 
 // ProjectPolicy returns the projects this configuration allows: the
@@ -229,6 +262,7 @@ func (c *Config) Redacted() map[string]any {
 		"transport":            c.Transport,
 		"httpAddr":             c.HTTPAddr,
 		"httpPath":             c.HTTPPath,
+		"mcpAuthMode":          c.MCPAuth,
 		"authToken":            maskSecret(c.AuthToken),
 		"allowUnauthenticated": c.AllowUnauthenticated,
 		"healthAddr":           c.HealthAddr,

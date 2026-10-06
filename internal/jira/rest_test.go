@@ -549,3 +549,27 @@ func TestUpdateIssue_ClearSendsNull(t *testing.T) {
 		}
 	}
 }
+
+func TestCallerClient_NoCredentialsThenPerCallerAuth(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"name":"ozan","active":true}`, &cap)
+	base := NewCallerClient(srv.URL, "dc", 5*time.Second)
+
+	if err := base.ServerInfo(context.Background()); err != nil {
+		t.Fatalf("server info: %v", err)
+	}
+	if cap.path != "/rest/api/2/serverInfo" || cap.auth != "" {
+		t.Fatalf("server info must GET /rest/api/2/serverInfo without credentials, got %s auth=%q", cap.path, cap.auth)
+	}
+
+	caller := base.WithAuthorization("Bearer caller-pat")
+	if _, err := caller.Myself(context.Background()); err != nil {
+		t.Fatalf("myself: %v", err)
+	}
+	if cap.auth != "Bearer caller-pat" {
+		t.Fatalf("caller client must send the caller's header, got %q", cap.auth)
+	}
+	if err := base.ServerInfo(context.Background()); err != nil || cap.auth != "" {
+		t.Fatalf("deriving a caller client must not change the base client (auth=%q)", cap.auth)
+	}
+}

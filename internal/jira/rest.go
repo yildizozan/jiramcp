@@ -37,6 +37,17 @@ func NewRESTClient(baseURL, authMode, email, apiToken, pat string, timeout time.
 		creds := base64.StdEncoding.EncodeToString([]byte(email + ":" + apiToken))
 		authHeader = "Basic " + creds
 	}
+	return newRESTClient(baseURL, dc, authHeader, timeout)
+}
+
+// NewCallerClient builds a client with no credentials of its own, for a server
+// that acts with each caller's Jira credentials. Derive a client per caller
+// with WithAuthorization; the unauthenticated base only serves ServerInfo.
+func NewCallerClient(baseURL, authMode string, timeout time.Duration) *RESTClient {
+	return newRESTClient(baseURL, authMode == "dc", "", timeout)
+}
+
+func newRESTClient(baseURL string, dc bool, authHeader string, timeout time.Duration) *RESTClient {
 	ver := "3"
 	if dc {
 		ver = "2"
@@ -56,6 +67,22 @@ func NewRESTClient(baseURL, authMode, email, apiToken, pat string, timeout time.
 			},
 		},
 	}
+}
+
+// WithAuthorization returns a client that sends the given Authorization header
+// value (e.g. "Bearer <PAT>") instead of its own. It shares the HTTP client,
+// and so the connection pool, with c.
+func (c *RESTClient) WithAuthorization(header string) Client {
+	cp := *c
+	cp.authHeader = header
+	return &cp
+}
+
+// ServerInfo checks that Jira answers. It needs no credentials, so it works
+// for a server that holds none of its own.
+func (c *RESTClient) ServerInfo(ctx context.Context) error {
+	_, err := c.do(ctx, "get server info", http.MethodGet, c.api("/serverInfo"), nil, nil)
+	return err
 }
 
 // api builds a REST path for the active API version, e.g. "/rest/api/2/myself".
@@ -163,7 +190,9 @@ func (c *RESTClient) send(ctx context.Context, op, method, full string, payload 
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: building request: %w", op, err)
 	}
-	req.Header.Set("Authorization", c.authHeader)
+	if c.authHeader != "" {
+		req.Header.Set("Authorization", c.authHeader)
+	}
 	req.Header.Set("Accept", "application/json")
 	// Bypass Jira's XSRF check; Server/DC rejects mutating REST calls without it,
 	// returning an HTML page instead of JSON. Harmless on Cloud and for GETs.

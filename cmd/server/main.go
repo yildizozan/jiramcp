@@ -86,22 +86,15 @@ func run(ctx context.Context, transport config.Transport) error {
 	logger := applog.Setup(cfg.LogLevel, cfg.LogFormat)
 	logger.Info("starting jiramcp", "version", version, "config", cfg.Redacted())
 
-	client := jira.NewRESTClient(cfg.BaseURL, string(cfg.AuthMode), cfg.AuthEmail, cfg.APIToken, cfg.PAT, cfg.HTTPTimeout)
-
-	// Verify credentials up front (fail fast).
-	checkCtx, cancel := context.WithTimeout(ctx, cfg.HTTPTimeout)
-	me, err := client.Myself(checkCtx)
-	cancel()
+	client, self, probe, err := connectJira(ctx, cfg, logger)
 	if err != nil {
-		return fmt.Errorf("jira credential check failed: %w", err)
+		return err
 	}
-	logger.Info("jira credentials ok", "accountId", me.AccountID, "displayName", me.DisplayName)
 
 	// Health and readiness only matter to an orchestrator probing the HTTP
 	// service. A stdio server is a child process of one MCP client; opening a
 	// port there would only collide when several clients run it at once.
 	if cfg.Transport == config.TransportHTTP {
-		probe := func(ctx context.Context) error { _, e := client.Myself(ctx); return e }
 		shutdown, err := startHealth(ctx, cfg.HealthAddr, probe, cfg.HTTPTimeout, logger)
 		if err != nil {
 			return err
@@ -109,13 +102,6 @@ func run(ctx context.Context, transport config.Transport) error {
 		defer shutdown()
 	}
 
-	// Over stdio the token belongs to the developer running the binary, so
-	// tickets default to them as reporter. The HTTP service authenticates as a
-	// shared service account, which must never become the default reporter.
-	self := ""
-	if cfg.Transport == config.TransportStdio {
-		self = me.Ref()
-	}
 	srv := mcpserver.New(cfg, client, self, logger, version)
 
 	switch cfg.Transport {
@@ -124,6 +110,42 @@ func run(ctx context.Context, transport config.Transport) error {
 	default:
 		return srv.RunHTTP(ctx)
 	}
+}
+
+// connectJira builds the Jira client, checks Jira up front (fail fast), and
+// returns the readiness probe. self is the user the client acts as when that
+// is the caller (stdio, with the developer's own token), else "".
+func connectJira(ctx context.Context, cfg *config.Config, logger *slog.Logger) (
+	client jira.Client, self string, probe func(context.Context) error, err error) {
+	checkCtx, cancel := context.WithTimeout(ctx, cfg.HTTPTimeout)
+	defer cancel()
+
+	// A server acting with each caller's credentials holds none of its own:
+	// it can only check that Jira answers.
+	if cfg.ActsAsCaller() {
+		cc := jira.NewCallerClient(cfg.BaseURL, string(cfg.AuthMode), cfg.HTTPTimeout)
+		if err := cc.ServerInfo(checkCtx); err != nil {
+			return nil, "", nil, fmt.Errorf("jira reachability check failed: %w", err)
+		}
+		logger.Info("jira reachable; callers authenticate with their own Jira credentials")
+		return cc, "", cc.ServerInfo, nil
+	}
+
+	rc := jira.NewRESTClient(cfg.BaseURL, string(cfg.AuthMode), cfg.AuthEmail, cfg.APIToken, cfg.PAT, cfg.HTTPTimeout)
+	me, err := rc.Myself(checkCtx)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("jira credential check failed: %w", err)
+	}
+	logger.Info("jira credentials ok", "accountId", me.AccountID, "displayName", me.DisplayName)
+
+	// Over stdio the token belongs to the developer running the binary, so
+	// tickets default to them as reporter. The HTTP service authenticates as a
+	// shared service account, which must never become the default reporter.
+	if cfg.Transport == config.TransportStdio {
+		self = me.Ref()
+	}
+	probe = func(ctx context.Context) error { _, e := rc.Myself(ctx); return e }
+	return rc, self, probe, nil
 }
 
 // startHealth serves /healthz and /readyz on addr, with readiness cached by a

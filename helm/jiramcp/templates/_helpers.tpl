@@ -17,6 +17,16 @@
 {{- end -}}
 {{- end -}}
 
+{{/* True when the server holds service-account credentials (not jira mode). */}}
+{{- define "jiramcp.usesServiceAccount" -}}
+{{- if not (and (eq .Values.mcp.transport "http") (eq .Values.mcp.authMode "jira")) -}}true{{- end -}}
+{{- end -}}
+
+{{/* True when a team mapping is configured. */}}
+{{- define "jiramcp.hasMapping" -}}
+{{- if trim .Values.teamMapping.inlineYaml -}}true{{- end -}}
+{{- end -}}
+
 {{- define "jiramcp.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
@@ -65,7 +75,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if not .Values.jira.baseUrl -}}
 {{- fail "jira.baseUrl is required" -}}
 {{- end -}}
-{{- if eq .Values.mcp.transport "http" -}}
+{{- if not (has .Values.mcp.authMode (list "token" "jira")) -}}
+{{- fail "mcp.authMode must be token or jira" -}}
+{{- end -}}
+{{- if and (eq .Values.mcp.transport "http") (eq .Values.mcp.authMode "token") -}}
 {{- if and (not .Values.mcp.allowUnauthenticated) (not .Values.jira.existingSecret) (not .Values.mcp.authToken) -}}
 {{- fail "mcp.authToken (or jira.existingSecret with an MCP_AUTH_TOKEN key) is required for http transport; set mcp.allowUnauthenticated=true only for local dev" -}}
 {{- end -}}

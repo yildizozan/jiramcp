@@ -24,11 +24,12 @@ const (
 
 // Server owns the MCP server and its dependencies.
 type Server struct {
-	base   *principal // used when the call's context carries none
-	teams  *config.TeamMapping
-	cfg    *config.Config
-	logger *slog.Logger
-	mcp    *server.MCPServer
+	base    *principal // used when the call's context carries none
+	callers *callerCache
+	teams   *config.TeamMapping
+	cfg     *config.Config
+	logger  *slog.Logger
+	mcp     *server.MCPServer
 }
 
 // New builds the MCP server and registers all tools. self is the Jira user id
@@ -38,10 +39,11 @@ type Server struct {
 // both `jiramcp --version` and MCP clients see the same value.
 func New(cfg *config.Config, client jira.Client, self string, logger *slog.Logger, version string) *Server {
 	s := &Server{
-		base:   &principal{client: client, policy: cfg.ProjectPolicy(), self: self},
-		teams:  cfg.Teams,
-		cfg:    cfg,
-		logger: logger,
+		base:    &principal{client: client, policy: cfg.ProjectPolicy(), self: self},
+		callers: newCallerCache(),
+		teams:   cfg.Teams,
+		cfg:     cfg,
+		logger:  logger,
 	}
 	s.mcp = server.NewMCPServer(
 		name, version,
@@ -77,18 +79,9 @@ func (s *Server) RunStdio(ctx context.Context) error {
 // cancelled. Stateless mode is used so the service scales horizontally without
 // sticky sessions.
 func (s *Server) RunHTTP(ctx context.Context) error {
-	streamable := server.NewStreamableHTTPServer(
-		s.mcp,
-		server.WithEndpointPath(s.cfg.HTTPPath),
-		server.WithStateLess(true),
-	)
-
-	mux := http.NewServeMux()
-	mux.Handle(s.cfg.HTTPPath, s.authMiddleware(streamable))
-
 	httpSrv := &http.Server{
 		Addr:    s.cfg.HTTPAddr,
-		Handler: mux,
+		Handler: s.httpHandler(),
 		// Slowloris / resource-exhaustion hardening. WriteTimeout is intentionally
 		// left unset so streamable-HTTP (SSE) responses are not truncated.
 		ReadHeaderTimeout: 10 * time.Second,
@@ -100,7 +93,8 @@ func (s *Server) RunHTTP(ctx context.Context) error {
 	go func() {
 		s.logger.Info("starting MCP http transport",
 			"addr", s.cfg.HTTPAddr, "path", s.cfg.HTTPPath,
-			"authenticated", !s.cfg.AllowUnauthenticated)
+			"authMode", s.cfg.MCPAuth,
+			"authenticated", s.cfg.ActsAsCaller() || !s.cfg.AllowUnauthenticated)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -114,6 +108,23 @@ func (s *Server) RunHTTP(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+// httpHandler serves the MCP endpoint behind the configured caller
+// authentication.
+func (s *Server) httpHandler() http.Handler {
+	streamable := server.NewStreamableHTTPServer(
+		s.mcp,
+		server.WithEndpointPath(s.cfg.HTTPPath),
+		server.WithStateLess(true),
+	)
+	auth := s.authMiddleware
+	if s.cfg.ActsAsCaller() {
+		auth = s.callerAuthMiddleware
+	}
+	mux := http.NewServeMux()
+	mux.Handle(s.cfg.HTTPPath, auth(streamable))
+	return mux
 }
 
 // authMiddleware enforces a static bearer token unless explicitly disabled.

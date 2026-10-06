@@ -211,3 +211,49 @@ func TestLoad_HTTPWithProjectsOnly(t *testing.T) {
 		t.Fatalf("JIRA_PROJECTS alone must be enough to bound the http service: %v", err)
 	}
 }
+
+func TestLoad_JiraAuthModeNeedsNoServerCredentials(t *testing.T) {
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
+	t.Setenv("JIRA_AUTH_MODE", "dc")
+	t.Setenv("MCP_AUTH_MODE", "jira")
+	cfg, err := Load(TransportHTTP)
+	if err != nil {
+		t.Fatalf("jira mode needs no PAT, MCP token or project bound: %v", err)
+	}
+	if !cfg.ActsAsCaller() || cfg.AuthMode != AuthDC {
+		t.Fatalf("ActsAsCaller=%v AuthMode=%s; want true, dc", cfg.ActsAsCaller(), cfg.AuthMode)
+	}
+	if !cfg.ProjectPolicy().Allowed("ANY") {
+		t.Fatal("without a list, callers acting as themselves are bounded by Jira only")
+	}
+}
+
+func TestLoad_JiraAuthModeValidation(t *testing.T) {
+	cases := map[string]map[string]string{
+		"dialect must be explicit": {"MCP_AUTH_MODE": "jira"},
+		"unknown mcp auth mode":    {"MCP_AUTH_MODE": "magic", "JIRA_PAT": "p", "MCP_AUTH_TOKEN": "s", "JIRA_PROJECTS": "PAY"},
+	}
+	for name, env := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
+			for k, v := range env {
+				t.Setenv(k, v)
+			}
+			if _, err := Load(TransportHTTP); err == nil {
+				t.Fatal("expected a configuration error")
+			}
+		})
+	}
+}
+
+func TestLoad_StdioIgnoresMCPAuthMode(t *testing.T) {
+	localDC(t)
+	t.Setenv("MCP_AUTH_MODE", "jira")
+	cfg, err := Load(TransportStdio)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.ActsAsCaller() {
+		t.Fatal("stdio always uses the configured token, never per-caller credentials")
+	}
+}

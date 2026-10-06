@@ -16,6 +16,11 @@ import (
 
 // fakeClient is a programmable jira.Client for tests.
 type fakeClient struct {
+	me          *jira.User // Myself result; a fixed service account when nil
+	meErr       error
+	myselfCalls int
+	callers     map[string]*fakeClient // WithAuthorization header -> client acting as that caller
+
 	users      []jira.User
 	projects   []jira.Project
 	issueTypes []jira.IssueType
@@ -48,7 +53,23 @@ type fakeClient struct {
 }
 
 func (f *fakeClient) Myself(context.Context) (*jira.User, error) {
+	f.myselfCalls++
+	if f.meErr != nil {
+		return nil, f.meErr
+	}
+	if f.me != nil {
+		return f.me, nil
+	}
 	return &jira.User{AccountID: "svc", DisplayName: "Service", Active: true}, nil
+}
+
+// WithAuthorization returns the fake registered for header, or one that Jira
+// rejects with 401 when the header is unknown.
+func (f *fakeClient) WithAuthorization(header string) jira.Client {
+	if c, ok := f.callers[header]; ok {
+		return c
+	}
+	return &fakeClient{meErr: &jira.APIError{StatusCode: 401, Op: "get current user"}}
 }
 func (f *fakeClient) SearchUsers(context.Context, string) ([]jira.User, error) {
 	return f.users, nil
