@@ -106,7 +106,8 @@ token. Tickets are filed as them (no Modify Reporter permission needed), and
 they can work in every project Jira lets them into; no team mapping is needed.
 
 ```bash
-make build   # or download a release binary
+# Download the binary for your OS from the GitHub release (or: make build),
+# check it against checksums.txt, then register it with your MCP client:
 claude mcp add jiramcp \
   -e JIRA_BASE_URL=https://jira.yildizozan.com \
   -e JIRA_PAT=<your personal access token> \
@@ -114,6 +115,9 @@ claude mcp add jiramcp \
   -e JIRA_DEFAULT_PROJECT=DOSD \
   -- /path/to/jiramcp
 ```
+
+On macOS a downloaded binary is quarantined; clear it once with
+`xattr -d com.apple.quarantine /path/to/jiramcp`.
 
 `JIRA_PROJECTS` and `JIRA_DEFAULT_PROJECT` are optional: without the list every
 project your token can see is usable, and without a default each create names
@@ -196,7 +200,11 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
 make all        # tidy, vet, test, build
 make test       # go test ./... -race
 make helm-lint helm-template
+make dist       # cross-compiled binaries + checksums in dist/
 ```
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which publishes the
+`make dist` binaries as a GitHub release.
 
 ## Layout
 
