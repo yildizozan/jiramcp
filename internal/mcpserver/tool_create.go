@@ -31,7 +31,7 @@ func createTicketTool() mcp.Tool {
 		mcp.WithArray("labels", mcp.WithStringItems(), mcp.Description("Optional labels (merged with team defaults).")),
 		mcp.WithArray("components", mcp.WithStringItems(), mcp.Description("Optional component names (merged with team defaults).")),
 		mcp.WithString("due_date", mcp.Description("Optional due date, YYYY-MM-DD."), mcp.Pattern(`^\d{4}-\d{2}-\d{2}$`)),
-		mcp.WithString("parent", mcp.Description("Optional parent/epic key for sub-tasks or team-managed children.")),
+		mcp.WithString("parent", mcp.Description("Optional parent/epic key for sub-tasks or team-managed children. Must be in a mapped project.")),
 	)
 }
 
@@ -82,6 +82,17 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 		}
 	}
 
+	// The parent is an issue key like any other, so it must also live in a
+	// mapped project; otherwise create could attach the new ticket to an epic
+	// or story elsewhere.
+	var parentKey string
+	if ref := strings.TrimSpace(req.GetString("parent", "")); ref != "" {
+		parentKey, err = s.requireMappedIssue(ctx, ref)
+		if err != nil {
+			return mcp.NewToolResultError("parent: " + err.Error()), nil
+		}
+	}
+
 	// 4. Assemble the input, merging team defaults.
 	in := jira.CreateIssueInput{
 		ProjectKey:  projectKey,
@@ -94,7 +105,7 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 		Labels:      mergeUnique(teamCfg.Labels, req.GetStringSlice("labels", nil)),
 		Components:  mergeUnique(teamCfg.Components, req.GetStringSlice("components", nil)),
 		DueDate:     req.GetString("due_date", ""),
-		ParentKey:   req.GetString("parent", ""),
+		ParentKey:   parentKey,
 		ExtraFields: teamCfg.Fields,
 	}
 

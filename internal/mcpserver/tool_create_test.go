@@ -17,6 +17,7 @@ import (
 // fakeClient is a programmable jira.Client for tests.
 type fakeClient struct {
 	users      []jira.User
+	projects   []jira.Project
 	issueTypes []jira.IssueType
 	meta       *jira.CreateMeta
 	metaErr    error
@@ -53,7 +54,7 @@ func (f *fakeClient) SearchUsers(context.Context, string) ([]jira.User, error) {
 	return f.users, nil
 }
 func (f *fakeClient) SearchProjects(context.Context, string) ([]jira.Project, error) {
-	return nil, nil
+	return f.projects, nil
 }
 func (f *fakeClient) IssueTypes(context.Context, string) ([]jira.IssueType, error) {
 	return f.issueTypes, nil
@@ -318,5 +319,49 @@ func TestCreate_ReporterWithNoUsableIdentity(t *testing.T) {
 	}
 	if f.created != nil {
 		t.Fatal("must not create a ticket when the reporter has no usable id")
+	}
+}
+
+func createWithParent(t *testing.T, f *fakeClient, parent string) *mcp.CallToolResult {
+	t.Helper()
+	f.users = []jira.User{{AccountID: "acc-1", Active: true}}
+	f.issueTypes = []jira.IssueType{{ID: "10001", Name: "Task"}}
+	f.metaErr = errors.New("skip pre-validation")
+	res, _ := newServer(f, testCfg()).handleCreateTicket(context.Background(), newReq(map[string]any{
+		"summary": "child", "reporter": "acc-1", "team": "payments", "parent": parent,
+	}))
+	return res
+}
+
+func TestCreate_ParentInUnmappedProjectBlocked(t *testing.T) {
+	f := &fakeClient{}
+	res := createWithParent(t, f, "HR-5")
+	if !res.IsError || !strings.Contains(resultText(res), "parent:") {
+		t.Fatalf("expected a parent mapping error, got: %s", resultText(res))
+	}
+	if f.created != nil {
+		t.Fatal("must not create a ticket under a parent in an unmapped project")
+	}
+}
+
+func TestCreate_ParentMovedOutOfMappingBlocked(t *testing.T) {
+	f := &fakeClient{moved: map[string]string{"PAY-5": "HR-5"}}
+	res := createWithParent(t, f, "PAY-5")
+	if !res.IsError {
+		t.Fatal("expected a parent moved to an unmapped project to be blocked")
+	}
+	if f.created != nil {
+		t.Fatal("must not create a ticket under a moved parent")
+	}
+}
+
+func TestCreate_ParentUsesCurrentKey(t *testing.T) {
+	f := &fakeClient{moved: map[string]string{"PAY-5": "PAY-50"}}
+	res := createWithParent(t, f, "PAY-5")
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", resultText(res))
+	}
+	if f.created == nil || f.created.ParentKey != "PAY-50" {
+		t.Fatalf("parent should be the current key PAY-50, got %+v", f.created)
 	}
 }

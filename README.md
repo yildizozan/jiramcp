@@ -33,8 +33,8 @@ as the service account.
 | `update_comment` | Replace the body of an existing comment, by `comment_id`. |
 | `transition_jira_ticket` | List the available workflow transitions for an issue, or apply one (optionally with a comment). |
 | `search_users` | Resolve a name/email to the reporter/assignee id (accountId on Cloud, username on Server/DC). |
-| `list_projects` | List projects reachable by the service account. |
-| `list_issue_types` | List issue types valid for a project. |
+| `list_projects` | List the projects in the team mapping. |
+| `list_issue_types` | List issue types valid for a mapped project. |
 
 `create_jira_ticket` parameters: `summary` (required), `reporter` (required —
 accountId, or email/name resolved to exactly one active user), `team` and/or
@@ -149,7 +149,11 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
   `list_comments`/`update_comment`/`transition` reject any issue key whose
   project is not in the mapping. The check runs on the issue's current key as
   Jira reports it, so the old key of an issue moved out of a mapped project
-  is rejected too.
+  is rejected too. A `parent` passed to `create` must also be in a mapped
+  project, and `list_projects`/`list_issue_types` only report mapped projects.
+- `search_users` is the exception: it searches the whole Jira user directory
+  (names and, where Jira shows them, emails), because a reporter or assignee
+  can be anyone. Keep that in mind when deciding who gets the token.
 - Editing a comment is authorized by Jira alone: the service account can only
   change what its project permissions allow ('Edit Own Comments' vs 'Edit All
   Comments'). `update_comment` REPLACES the body, so the previous text is kept

@@ -127,3 +127,30 @@ func TestGetTicket_IssueKeyErrorSurfaces(t *testing.T) {
 		t.Fatal("must not call GetIssue when the key check fails")
 	}
 }
+
+func TestListProjects_OnlyMappedProjects(t *testing.T) {
+	f := &fakeClient{projects: []jira.Project{
+		{Key: "PAY", Name: "Payments"}, {Key: "HR", Name: "Human Resources"},
+	}}
+	res, _ := newServer(f, testCfg()).handleListProjects(context.Background(), newReq(map[string]any{}))
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", resultText(res))
+	}
+	if strings.Contains(resultText(res), "found 2") || !strings.Contains(resultText(res), "found 1") {
+		t.Fatalf("expected only the mapped project, got: %s", resultText(res))
+	}
+}
+
+func TestListIssueTypes_UnmappedProjectBlocked(t *testing.T) {
+	f := &fakeClient{issueTypes: []jira.IssueType{{ID: "1", Name: "Task"}}}
+	srv := newServer(f, testCfg())
+
+	res, _ := srv.handleListIssueTypes(context.Background(), newReq(map[string]any{"project": "HR"}))
+	if !res.IsError {
+		t.Fatal("expected list_issue_types to reject an unmapped project")
+	}
+	res, _ = srv.handleListIssueTypes(context.Background(), newReq(map[string]any{"project": " pay "}))
+	if res.IsError {
+		t.Fatalf("mapped project should be accepted case-insensitively: %s", resultText(res))
+	}
+}

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
+
+	"jiramcp/internal/jira"
 )
 
 // getTicketTool reads an existing issue.
@@ -81,15 +83,23 @@ func (s *Server) handleSearchUsers(ctx context.Context, req mcp.CallToolRequest)
 
 func listProjectsTool() mcp.Tool {
 	return mcp.NewTool("list_projects",
-		mcp.WithDescription("List Jira projects reachable by the service account, optionally filtered by query."),
+		mcp.WithDescription("List the Jira projects in the team mapping (the only projects the other tools accept), optionally filtered by query."),
 		mcp.WithString("query", mcp.Description("Optional name/key filter.")),
 	)
 }
 
 func (s *Server) handleListProjects(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	projects, err := s.client.SearchProjects(ctx, req.GetString("query", ""))
+	found, err := s.client.SearchProjects(ctx, req.GetString("query", ""))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+	// Report only mapped projects: the mapping is the authorization boundary,
+	// and listing the rest would expose projects no other tool may touch.
+	projects := make([]jira.Project, 0, len(found))
+	for _, p := range found {
+		if s.teams.IsMappedProject(p.Key) {
+			projects = append(projects, p)
+		}
 	}
 	return mcp.NewToolResultStructured(map[string]any{"projects": projects},
 		fmt.Sprintf("found %d project(s)", len(projects))), nil
@@ -97,8 +107,8 @@ func (s *Server) handleListProjects(ctx context.Context, req mcp.CallToolRequest
 
 func listIssueTypesTool() mcp.Tool {
 	return mcp.NewTool("list_issue_types",
-		mcp.WithDescription("List the issue types valid for a project (by key)."),
-		mcp.WithString("project", mcp.Required(), mcp.Description("Project key.")),
+		mcp.WithDescription("List the issue types valid for a mapped project (by key)."),
+		mcp.WithString("project", mcp.Required(), mcp.Description("Project key; must be in the team mapping.")),
 	)
 }
 
@@ -107,7 +117,11 @@ func (s *Server) handleListIssueTypes(ctx context.Context, req mcp.CallToolReque
 	if err != nil {
 		return mcp.NewToolResultError("project is required"), nil
 	}
-	types, err := s.client.IssueTypes(ctx, strings.ToUpper(project))
+	project = strings.ToUpper(strings.TrimSpace(project))
+	if !s.teams.IsMappedProject(project) {
+		return mcp.NewToolResultError(fmt.Sprintf("project %q is not in the team mapping", project)), nil
+	}
+	types, err := s.client.IssueTypes(ctx, project)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
