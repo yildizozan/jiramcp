@@ -137,7 +137,7 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	s.logger.Info("ticket created",
+	s.logger.Info("ticket created", "caller", p.auditCaller(),
 		"key", issue.Key, "project", projectKey, "issueType", issueTypeName,
 		"reporter", reporterID, "assignee", assigneeID)
 

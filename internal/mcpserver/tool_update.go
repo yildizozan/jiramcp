@@ -118,7 +118,7 @@ func (s *Server) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest
 	if err := p.client.UpdateIssue(ctx, key, in); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	s.logger.Info("ticket updated", "key", key)
+	s.logger.Info("ticket updated", "caller", p.auditCaller(), "key", key)
 	url := p.client.BrowseURL(key)
 	return mcp.NewToolResultStructured(
 		map[string]any{"key": key, "url": url},
@@ -173,7 +173,7 @@ func (s *Server) handleTransition(ctx context.Context, req mcp.CallToolRequest) 
 	if err := p.client.TransitionIssue(ctx, key, match.ID, req.GetString("comment", "")); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	s.logger.Info("ticket transitioned", "key", key, "transition", match.Name, "to", match.ToName)
+	s.logger.Info("ticket transitioned", "caller", p.auditCaller(), "key", key, "transition", match.Name, "to", match.ToName)
 	url := p.client.BrowseURL(key)
 	return mcp.NewToolResultStructured(
 		map[string]any{"key": key, "transition": match.Name, "status": match.ToName, "url": url},

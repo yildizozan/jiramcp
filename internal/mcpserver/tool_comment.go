@@ -38,7 +38,7 @@ func (s *Server) handleAddComment(ctx context.Context, req mcp.CallToolRequest) 
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	s.logger.Info("comment added", "key", key, "commentId", c.ID)
+	s.logger.Info("comment added", "caller", p.auditCaller(), "key", key, "commentId", c.ID)
 	return mcp.NewToolResultStructured(
 		map[string]any{"key": key, "commentId": c.ID, "url": c.URL},
 		fmt.Sprintf("Commented on %s: %s", key, c.URL)), nil
@@ -107,7 +107,7 @@ func (s *Server) handleUpdateComment(ctx context.Context, req mcp.CallToolReques
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	s.logger.Info("comment updated", "key", key, "commentId", c.ID)
+	s.logger.Info("comment updated", "caller", p.auditCaller(), "key", key, "commentId", c.ID)
 	return mcp.NewToolResultStructured(
 		map[string]any{"key": key, "commentId": c.ID, "url": c.URL},
 		fmt.Sprintf("Updated comment %s on %s: %s", c.ID, key, c.URL)), nil

@@ -42,3 +42,11 @@ func (s *Server) principal(ctx context.Context) *principal {
 	}
 	return s.base
 }
+
+// auditCaller names the caller in audit log lines.
+func (p *principal) auditCaller() string {
+	if p.caller == "" {
+		return "shared-token"
+	}
+	return p.caller
+}
