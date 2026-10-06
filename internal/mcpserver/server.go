@@ -12,6 +12,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/server"
 
+	"jiramcp/internal/access"
 	"jiramcp/internal/config"
 	"jiramcp/internal/jira"
 )
@@ -24,7 +25,7 @@ const (
 
 // Server owns the MCP server and its dependencies.
 type Server struct {
-	client jira.Client
+	base   *principal // used when the call's context carries none
 	teams  *config.TeamMapping
 	cfg    *config.Config
 	logger *slog.Logger
@@ -36,7 +37,7 @@ type Server struct {
 // `jiramcp --version` and MCP clients see the same value.
 func New(cfg *config.Config, client jira.Client, logger *slog.Logger, version string) *Server {
 	s := &Server{
-		client: client,
+		base:   &principal{client: client, policy: access.Projects(cfg.Teams.ProjectKeyList()...)},
 		teams:  cfg.Teams,
 		cfg:    cfg,
 		logger: logger,

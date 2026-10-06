@@ -120,18 +120,13 @@ func (m *TeamMapping) Lookup(name string) (TeamConfig, bool) {
 	return cfg, ok
 }
 
-// ProjectKeys returns the set of project keys reachable via the mapping.
-func (m *TeamMapping) ProjectKeys() map[string]struct{} {
-	keys := make(map[string]struct{}, len(m.Teams))
+// ProjectKeyList returns the project keys reachable via the mapping, upper-
+// cased. Config load rejects two teams routing to the same project, so the
+// list has no duplicates.
+func (m *TeamMapping) ProjectKeyList() []string {
+	keys := make([]string, 0, len(m.Teams))
 	for _, cfg := range m.Teams {
-		keys[strings.ToUpper(cfg.ProjectKey)] = struct{}{}
+		keys = append(keys, strings.ToUpper(cfg.ProjectKey))
 	}
 	return keys
-}
-
-// IsMappedProject reports whether the given project key is referenced by any
-// team in the mapping (case-insensitive).
-func (m *TeamMapping) IsMappedProject(key string) bool {
-	_, ok := m.ProjectKeys()[strings.ToUpper(strings.TrimSpace(key))]
-	return ok
 }

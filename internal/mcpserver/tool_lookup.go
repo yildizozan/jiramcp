@@ -19,15 +19,16 @@ func getTicketTool() mcp.Tool {
 }
 
 func (s *Server) handleGetTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	key, err := req.RequireString("key")
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	key, err = s.requireMappedIssue(ctx, key)
+	key, err = s.requireAllowedIssue(ctx, key)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	issue, err := s.client.GetIssue(ctx, key)
+	issue, err := p.client.GetIssue(ctx, key)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -43,11 +44,12 @@ func searchUsersTool() mcp.Tool {
 }
 
 func (s *Server) handleSearchUsers(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	query, err := req.RequireString("query")
 	if err != nil {
 		return mcp.NewToolResultError("query is required"), nil
 	}
-	users, err := s.client.SearchUsers(ctx, query)
+	users, err := p.client.SearchUsers(ctx, query)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -89,16 +91,17 @@ func listProjectsTool() mcp.Tool {
 }
 
 func (s *Server) handleListProjects(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	found, err := s.client.SearchProjects(ctx, req.GetString("query", ""))
+	p := s.principal(ctx)
+	found, err := p.client.SearchProjects(ctx, req.GetString("query", ""))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	// Report only mapped projects: the mapping is the authorization boundary,
+	// Report only allowed projects: the policy is the authorization boundary,
 	// and listing the rest would expose projects no other tool may touch.
 	projects := make([]jira.Project, 0, len(found))
-	for _, p := range found {
-		if s.teams.IsMappedProject(p.Key) {
-			projects = append(projects, p)
+	for _, proj := range found {
+		if p.policy.Allowed(proj.Key) {
+			projects = append(projects, proj)
 		}
 	}
 	return mcp.NewToolResultStructured(map[string]any{"projects": projects},
@@ -113,15 +116,16 @@ func listIssueTypesTool() mcp.Tool {
 }
 
 func (s *Server) handleListIssueTypes(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	project, err := req.RequireString("project")
 	if err != nil {
 		return mcp.NewToolResultError("project is required"), nil
 	}
 	project = strings.ToUpper(strings.TrimSpace(project))
-	if !s.teams.IsMappedProject(project) {
-		return mcp.NewToolResultError(fmt.Sprintf("project %q is not in the team mapping", project)), nil
+	if !p.policy.Allowed(project) {
+		return mcp.NewToolResultError(fmt.Sprintf("project %q %s", project, notAllowed(p.policy))), nil
 	}
-	types, err := s.client.IssueTypes(ctx, project)
+	types, err := p.client.IssueTypes(ctx, project)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

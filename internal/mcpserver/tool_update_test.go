@@ -105,7 +105,7 @@ func TestUpdate_UnmappedKeyBlocked(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("expected unmapped issue key to be blocked")
 	}
-	if !strings.Contains(resultText(res), "not in the team mapping") {
+	if !strings.Contains(resultText(res), "is not allowed; allowed projects: PAY") {
 		t.Fatalf("unexpected message: %s", resultText(res))
 	}
 	if f.updated != nil {

@@ -18,7 +18,7 @@ jiramcp, Go ile yazılmış bir MCP sunucusudur. Jira'da bir ekip projesine, ad�
 
 ## Güvenlik kuralları
 
-- Team mapping her issue işleminin yetki sınırıdır. Issue key alan her araç `requireMappedIssue` ile kontrol edilir ve Jira'nın döndürdüğü güncel key kullanılır. Yeni bir araç bu kuralı atlamamalı.
+- Çağıranın proje policy'si (`internal/access`) her issue işleminin yetki sınırıdır. Issue key alan her araç `requireAllowedIssue` ile kontrol edilir ve Jira'nın döndürdüğü güncel key kullanılır. Handler'lar Jira client'ı ve policy'yi `s.principal(ctx)` üzerinden alır, sunucu alanlarından değil. Yeni bir araç bu kuralları atlamamalı.
 - Kimlik çözümlemesi kapalı başarısız olur: belirsiz ya da bulunamayan kullanıcı için tahmin yapma, hata dön.
 - Kimlik bilgileri yalnızca ortamdan okunur ve asla loglanmaz.
 - Stdio modunda stdout MCP trafiğidir; log yalnızca stderr'e gider.

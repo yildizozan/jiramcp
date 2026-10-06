@@ -76,18 +76,19 @@ func clearFields(names []string, set map[string]bool) ([]string, error) {
 }
 
 func (s *Server) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	key, err := req.RequireString("key")
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	key, err = s.requireMappedIssue(ctx, key)
+	key, err = s.requireAllowedIssue(ctx, key)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	var assigneeID string
 	if ref := req.GetString("assignee", ""); ref != "" {
-		assigneeID, err = resolveUserID(ctx, s.client, ref, s.dc())
+		assigneeID, err = resolveUserID(ctx, p.client, ref, s.dc())
 		if err != nil {
 			return mcp.NewToolResultError("assignee: " + err.Error()), nil
 		}
@@ -114,11 +115,11 @@ func (s *Server) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("no fields to update; pass at least one of summary/description/assignee/priority/labels/components/due_date/clear"), nil
 	}
 
-	if err := s.client.UpdateIssue(ctx, key, in); err != nil {
+	if err := p.client.UpdateIssue(ctx, key, in); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	s.logger.Info("ticket updated", "key", key)
-	url := s.client.BrowseURL(key)
+	url := p.client.BrowseURL(key)
 	return mcp.NewToolResultStructured(
 		map[string]any{"key": key, "url": url},
 		fmt.Sprintf("Updated %s: %s", key, url)), nil
@@ -135,15 +136,16 @@ func transitionTool() mcp.Tool {
 }
 
 func (s *Server) handleTransition(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	key, err := req.RequireString("key")
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	key, err = s.requireMappedIssue(ctx, key)
+	key, err = s.requireAllowedIssue(ctx, key)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	available, err := s.client.Transitions(ctx, key)
+	available, err := p.client.Transitions(ctx, key)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -168,11 +170,11 @@ func (s *Server) handleTransition(ctx context.Context, req mcp.CallToolRequest) 
 			"no transition matches %q for %s; available: %s", to, key, describeTransitions(available))), nil
 	}
 
-	if err := s.client.TransitionIssue(ctx, key, match.ID, req.GetString("comment", "")); err != nil {
+	if err := p.client.TransitionIssue(ctx, key, match.ID, req.GetString("comment", "")); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	s.logger.Info("ticket transitioned", "key", key, "transition", match.Name, "to", match.ToName)
-	url := s.client.BrowseURL(key)
+	url := p.client.BrowseURL(key)
 	return mcp.NewToolResultStructured(
 		map[string]any{"key": key, "transition": match.Name, "status": match.ToName, "url": url},
 		fmt.Sprintf("Transitioned %s via %q to %s: %s", key, match.Name, match.ToName, url)), nil

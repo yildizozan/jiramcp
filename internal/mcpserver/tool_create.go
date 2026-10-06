@@ -8,6 +8,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 
+	"jiramcp/internal/access"
 	"jiramcp/internal/config"
 	"jiramcp/internal/jira"
 )
@@ -46,6 +47,7 @@ type createResult struct {
 }
 
 func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	summary, err := req.RequireString("summary")
 	if err != nil {
 		return mcp.NewToolResultError("summary is required"), nil
@@ -56,27 +58,27 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	// 1. Resolve the target project and pick up team defaults.
-	projectKey, teamCfg, err := s.resolveProject(req.GetString("team", ""), req.GetString("project", ""))
+	projectKey, teamCfg, err := s.resolveProject(p.policy, req.GetString("team", ""), req.GetString("project", ""))
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	// 2. Resolve issue type name -> id.
 	issueTypeName := firstNonEmpty(req.GetString("issue_type", ""), teamCfg.DefaultIssueType, s.cfg.DefaultIssueType)
-	issueTypeID, err := resolveIssueTypeID(ctx, s.client, projectKey, issueTypeName)
+	issueTypeID, err := resolveIssueTypeID(ctx, p.client, projectKey, issueTypeName)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	// 3. Resolve reporter (required) and assignee (optional) to the
 	// dialect-appropriate identifier (accountId on Cloud, username on DC).
-	reporterID, err := resolveUserID(ctx, s.client, reporterRef, s.dc())
+	reporterID, err := resolveUserID(ctx, p.client, reporterRef, s.dc())
 	if err != nil {
 		return mcp.NewToolResultError("reporter: " + err.Error()), nil
 	}
 	var assigneeID string
 	if ref := req.GetString("assignee", ""); ref != "" {
-		assigneeID, err = resolveUserID(ctx, s.client, ref, s.dc())
+		assigneeID, err = resolveUserID(ctx, p.client, ref, s.dc())
 		if err != nil {
 			return mcp.NewToolResultError("assignee: " + err.Error()), nil
 		}
@@ -87,7 +89,7 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 	// or story elsewhere.
 	var parentKey string
 	if ref := strings.TrimSpace(req.GetString("parent", "")); ref != "" {
-		parentKey, err = s.requireMappedIssue(ctx, ref)
+		parentKey, err = s.requireAllowedIssue(ctx, ref)
 		if err != nil {
 			return mcp.NewToolResultError("parent: " + err.Error()), nil
 		}
@@ -115,7 +117,7 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	// 6. Create.
-	issue, err := s.client.CreateIssue(ctx, in)
+	issue, err := p.client.CreateIssue(ctx, in)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -134,12 +136,12 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 }
 
 // resolveProject determines the project key from an explicit project or a team
-// name, applying the unmapped-project restriction and surfacing team defaults.
-func (s *Server) resolveProject(team, project string) (string, config.TeamConfig, error) {
+// name, applying the caller's project policy and surfacing team defaults.
+func (s *Server) resolveProject(policy access.Policy, team, project string) (string, config.TeamConfig, error) {
 	if project != "" {
 		key := strings.ToUpper(strings.TrimSpace(project))
-		if !s.teams.IsMappedProject(key) {
-			return "", config.TeamConfig{}, fmt.Errorf("project %q is not in the team mapping", key)
+		if !policy.Allowed(key) {
+			return "", config.TeamConfig{}, fmt.Errorf("project %q %s", key, notAllowed(policy))
 		}
 		// Surface defaults from the team that maps to this project, if any.
 		// Config load rejects duplicate project keys, so at most one team
@@ -163,7 +165,11 @@ func (s *Server) resolveProject(team, project string) (string, config.TeamConfig
 	if !ok {
 		return "", config.TeamConfig{}, fmt.Errorf("unknown team %q; known teams: %s", name, strings.Join(s.teamNames(), ", "))
 	}
-	return strings.ToUpper(cfg.ProjectKey), cfg, nil
+	key := strings.ToUpper(cfg.ProjectKey)
+	if !policy.Allowed(key) {
+		return "", config.TeamConfig{}, fmt.Errorf("team %q routes to project %q, which %s", name, key, notAllowed(policy))
+	}
+	return key, cfg, nil
 }
 
 // validateAgainstCreateMeta fetches the create screen metadata and enforces
@@ -171,7 +177,8 @@ func (s *Server) resolveProject(team, project string) (string, config.TeamConfig
 // all required fields must be provided. If metadata cannot be fetched the
 // check is skipped (best effort) and Jira's own validation applies on create.
 func (s *Server) validateAgainstCreateMeta(ctx context.Context, in jira.CreateIssueInput) error {
-	meta, err := s.client.CreateMeta(ctx, in.ProjectKey, in.IssueTypeID)
+	p := s.principal(ctx)
+	meta, err := p.client.CreateMeta(ctx, in.ProjectKey, in.IssueTypeID)
 	if err != nil {
 		s.logger.Warn("create metadata unavailable; skipping pre-validation",
 			"project", in.ProjectKey, "issueTypeID", in.IssueTypeID, "error", err.Error())

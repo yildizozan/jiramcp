@@ -21,11 +21,12 @@ func addCommentTool() mcp.Tool {
 }
 
 func (s *Server) handleAddComment(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	key, err := req.RequireString("key")
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	key, err = s.requireMappedIssue(ctx, key)
+	key, err = s.requireAllowedIssue(ctx, key)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -33,7 +34,7 @@ func (s *Server) handleAddComment(ctx context.Context, req mcp.CallToolRequest) 
 	if err != nil {
 		return mcp.NewToolResultError("body is required"), nil
 	}
-	c, err := s.client.AddComment(ctx, key, body)
+	c, err := p.client.AddComment(ctx, key, body)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -55,16 +56,17 @@ func listCommentsTool() mcp.Tool {
 }
 
 func (s *Server) handleListComments(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	key, err := req.RequireString("key")
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	key, err = s.requireMappedIssue(ctx, key)
+	key, err = s.requireAllowedIssue(ctx, key)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	limit := req.GetInt("limit", defaultCommentLimit)
-	comments, err := s.client.ListComments(ctx, key, limit)
+	comments, err := p.client.ListComments(ctx, key, limit)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -84,11 +86,12 @@ func updateCommentTool() mcp.Tool {
 }
 
 func (s *Server) handleUpdateComment(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	p := s.principal(ctx)
 	key, err := req.RequireString("key")
 	if err != nil {
 		return mcp.NewToolResultError("key is required"), nil
 	}
-	key, err = s.requireMappedIssue(ctx, key)
+	key, err = s.requireAllowedIssue(ctx, key)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -100,7 +103,7 @@ func (s *Server) handleUpdateComment(ctx context.Context, req mcp.CallToolReques
 	if err != nil {
 		return mcp.NewToolResultError("body is required"), nil
 	}
-	c, err := s.client.UpdateComment(ctx, key, commentID, body)
+	c, err := p.client.UpdateComment(ctx, key, commentID, body)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

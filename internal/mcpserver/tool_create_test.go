@@ -270,7 +270,7 @@ func TestCreate_UnmappedProjectBlocked(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("expected unmapped project to be blocked")
 	}
-	if !strings.Contains(resultText(res), "not in the team mapping") {
+	if !strings.Contains(resultText(res), "is not allowed; allowed projects: PAY") {
 		t.Fatalf("unexpected message: %s", resultText(res))
 	}
 }

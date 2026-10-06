@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"jiramcp/internal/access"
 )
 
 // projectKeyFromIssueKey extracts the project portion of a Jira issue key
@@ -18,39 +20,50 @@ func projectKeyFromIssueKey(issueKey string) string {
 	return issueKey[:i]
 }
 
-// requireMappedIssue applies, to the issue-key tools (get/update/comment/
-// transition), the same project restriction that create enforces: the issue
-// must live in a project reachable via the team mapping. The curated mapping is
-// the authorization boundary for every issue operation, not merely routing for
-// create.
+// requireAllowedIssue applies, to the issue-key tools (get/update/comment/
+// transition) and to create's parent, the same project restriction that create
+// enforces: the issue must live in a project the caller's policy allows. The
+// policy is the authorization boundary for every issue operation, not merely
+// routing for create.
 //
 // It returns the issue's current key, which callers must use for every further
 // request. Checking only the key the caller passed is not enough: Jira resolves
 // the old key of a moved issue to the issue in its new project, so "PAY-1" can
-// name an issue that now lives in an unmapped project.
-func (s *Server) requireMappedIssue(ctx context.Context, issueKey string) (string, error) {
-	if err := s.checkMappedKey(issueKey); err != nil {
+// name an issue that now lives in a project the caller may not use.
+func (s *Server) requireAllowedIssue(ctx context.Context, issueKey string) (string, error) {
+	p := s.principal(ctx)
+	if err := checkAllowedKey(p.policy, issueKey); err != nil {
 		return "", err
 	}
-	current, err := s.client.IssueKey(ctx, issueKey)
+	current, err := p.client.IssueKey(ctx, issueKey)
 	if err != nil {
 		return "", err
 	}
-	if err := s.checkMappedKey(current); err != nil {
+	if err := checkAllowedKey(p.policy, current); err != nil {
 		return "", fmt.Errorf("issue %s was moved to %s: %w", issueKey, current, err)
 	}
 	return current, nil
 }
 
-// checkMappedKey reports an error unless the key is well formed and its
-// project is in the team mapping.
-func (s *Server) checkMappedKey(issueKey string) error {
+// checkAllowedKey reports an error unless the key is well formed and the
+// policy allows its project.
+func checkAllowedKey(policy access.Policy, issueKey string) error {
 	proj := projectKeyFromIssueKey(issueKey)
 	if proj == "" {
 		return fmt.Errorf("invalid issue key %q; expected the form PROJECT-NUMBER (e.g. DOSD-1036)", issueKey)
 	}
-	if !s.teams.IsMappedProject(proj) {
-		return fmt.Errorf("issue %s is in project %q, which is not in the team mapping", issueKey, proj)
+	if !policy.Allowed(proj) {
+		return fmt.Errorf("issue %s is in project %q, which %s", issueKey, proj, notAllowed(policy))
 	}
 	return nil
+}
+
+// notAllowed explains a policy rejection and names the projects that are
+// allowed, so the caller can correct the request.
+func notAllowed(policy access.Policy) string {
+	allowed := policy.Projects()
+	if len(allowed) == 0 {
+		return "is not allowed; no projects are allowed"
+	}
+	return "is not allowed; allowed projects: " + strings.Join(allowed, ", ")
 }

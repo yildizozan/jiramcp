@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"jiramcp/internal/access"
 	"jiramcp/internal/jira"
 )
 
@@ -152,5 +153,28 @@ func TestListIssueTypes_UnmappedProjectBlocked(t *testing.T) {
 	res, _ = srv.handleListIssueTypes(context.Background(), newReq(map[string]any{"project": " pay "}))
 	if res.IsError {
 		t.Fatalf("mapped project should be accepted case-insensitively: %s", resultText(res))
+	}
+}
+
+// A principal in the context replaces the server's default for that call:
+// its client serves the request and its policy decides the projects.
+func TestPrincipalFromContextOverridesDefault(t *testing.T) {
+	base := &fakeClient{}
+	srv := newServer(base, testCfg()) // default policy: PAY only
+
+	caller := &fakeClient{issue: &jira.Issue{Key: "HR-1", Summary: "s", Status: "Open"}}
+	ctx := withPrincipal(context.Background(), &principal{client: caller, policy: access.Projects("HR")})
+
+	res, _ := srv.handleGetTicket(ctx, newReq(map[string]any{"key": "HR-1"}))
+	if res.IsError {
+		t.Fatalf("unexpected error: %s", resultText(res))
+	}
+	if caller.gotKey != "HR-1" || base.gotKey != "" {
+		t.Fatalf("the context principal's client must serve the call (caller=%q base=%q)", caller.gotKey, base.gotKey)
+	}
+
+	res, _ = srv.handleGetTicket(ctx, newReq(map[string]any{"key": "PAY-1"}))
+	if !res.IsError {
+		t.Fatal("the context principal's policy must apply, not the server default")
 	}
 }
