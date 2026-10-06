@@ -135,6 +135,13 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
 - The HTTP MCP endpoint creates Jira issues and exposes user search — never
   expose it unauthenticated. Prefer OIDC/mTLS at the ingress/gateway in
   addition to the bearer token.
+- The server does not know who calls it. One shared `MCP_AUTH_TOKEN` grants
+  every caller the same rights, and `reporter` is taken from the tool input
+  as given: anyone holding the token can file a ticket on behalf of any active
+  user, and the logs record the reporter, not the caller. Treat the token as a
+  service credential, give it only to trusted MCP clients, and rotate it when
+  a client leaves. If you need per-caller accountability, put an identity-aware
+  proxy (OIDC) in front of the endpoint and keep its access logs.
 - Credentials are only ever read from the environment (injected from a Secret);
   they are never logged (the startup config dump is redacted).
 - The team mapping is the authorization boundary for every issue operation:
