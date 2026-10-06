@@ -87,7 +87,7 @@ func (s *Server) handleUpdateTicket(ctx context.Context, req mcp.CallToolRequest
 
 	var assigneeID string
 	if ref := req.GetString("assignee", ""); ref != "" {
-		assigneeID, err = resolveUserID(ctx, s.client, ref)
+		assigneeID, err = resolveUserID(ctx, s.client, ref, s.dc())
 		if err != nil {
 			return mcp.NewToolResultError("assignee: " + err.Error()), nil
 		}

@@ -70,13 +70,13 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 
 	// 3. Resolve reporter (required) and assignee (optional) to the
 	// dialect-appropriate identifier (accountId on Cloud, username on DC).
-	reporterID, err := resolveUserID(ctx, s.client, reporterRef)
+	reporterID, err := resolveUserID(ctx, s.client, reporterRef, s.dc())
 	if err != nil {
 		return mcp.NewToolResultError("reporter: " + err.Error()), nil
 	}
 	var assigneeID string
 	if ref := req.GetString("assignee", ""); ref != "" {
-		assigneeID, err = resolveUserID(ctx, s.client, ref)
+		assigneeID, err = resolveUserID(ctx, s.client, ref, s.dc())
 		if err != nil {
 			return mcp.NewToolResultError("assignee: " + err.Error()), nil
 		}

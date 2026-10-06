@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"jiramcp/internal/jira"
@@ -32,28 +33,34 @@ func (e *UserResolutionError) Error() string {
 		e.Query, len(e.Candidates), strings.Join(names, "; "))
 }
 
+// cloudAccountID matches the two Jira Cloud accountId shapes: the legacy
+// 24-hex-digit id (5b10ac8d82e05b22cc7d4ef5) and the "<prefix>:<id>" form
+// (557058:f58131cb-b67d-43c7-b30d-6b58d40bd077).
+var cloudAccountID = regexp.MustCompile(`^(?:[0-9a-f]{24}|[0-9A-Za-z]+:[0-9A-Za-z-]+)$`)
+
 // looksLikeUserID reports whether the input should be treated as a ready-made
 // user identifier (passed through) rather than an email/name to search for.
-// Both Cloud accountIds and Server/DC usernames contain no '@' and no spaces;
-// emails contain '@' and display names usually contain a space.
-func looksLikeUserID(s string) bool {
+// On Server/DC a username is any token without '@' or spaces. On Cloud the
+// accountId has a fixed shape, so a single word such as "ozan" is searched as
+// a name instead of being sent to Jira as an invalid accountId.
+func looksLikeUserID(s string, dc bool) bool {
 	s = strings.TrimSpace(s)
-	if s == "" {
+	if s == "" || strings.ContainsAny(s, "@ ") {
 		return false
 	}
-	return !strings.ContainsAny(s, "@ ")
+	return dc || cloudAccountID.MatchString(s)
 }
 
 // resolveUserID maps a person reference (id, email, or name) to the
 // dialect-appropriate identifier (accountId on Cloud, username on Server/DC).
 // id-looking inputs are trusted and passed through; anything else is searched
 // and must resolve to exactly one active user.
-func resolveUserID(ctx context.Context, client jira.Client, input string) (string, error) {
+func resolveUserID(ctx context.Context, client jira.Client, input string, dc bool) (string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return "", fmt.Errorf("empty user reference")
 	}
-	if looksLikeUserID(input) {
+	if looksLikeUserID(input, dc) {
 		return input, nil
 	}
 

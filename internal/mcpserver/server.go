@@ -59,6 +59,10 @@ func New(cfg *config.Config, client jira.Client, logger *slog.Logger, version st
 	return s
 }
 
+// dc reports whether the server talks to Jira Server/Data Center, where users
+// are referenced by username instead of a Cloud accountId.
+func (s *Server) dc() bool { return s.cfg.AuthMode == config.AuthDC }
+
 // RunStdio serves MCP over stdio until ctx is cancelled.
 func (s *Server) RunStdio(ctx context.Context) error {
 	s.logger.Info("starting MCP stdio transport")
