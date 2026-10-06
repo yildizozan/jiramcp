@@ -21,10 +21,11 @@ func createTicketTool() mcp.Tool {
 				"The service account creates the issue but its reporter is set to the named person "+
 				"(requires the 'Modify Reporter' permission in the target project)."),
 		mcp.WithString("summary", mcp.Required(), mcp.Description("Issue summary/title."), mcp.MaxLength(255)),
-		mcp.WithString("reporter", mcp.Required(),
-			mcp.Description("The person to file on behalf of: an Atlassian accountId, or an email/display name resolved to exactly one active user.")),
-		mcp.WithString("team", mcp.Description("Team name; resolved to a project via the configured mapping. Omit to use project or the default team.")),
-		mcp.WithString("project", mcp.Description("Explicit Jira project key (overrides team). Must be one of the mapped projects.")),
+		mcp.WithString("reporter",
+			mcp.Description("The person to file on behalf of: a user id (accountId on Cloud, username on Server/DC), or an email/display name resolved to exactly one active user. "+
+				"Omit to file as yourself when the server runs with your own Jira token; required when it runs as a shared service account.")),
+		mcp.WithString("team", mcp.Description("Team name; resolved to a project via the configured mapping, if any. Omit to use project or the default.")),
+		mcp.WithString("project", mcp.Description("Explicit Jira project key (overrides team). Must be an allowed project; see list_projects.")),
 		mcp.WithString("issue_type", mcp.Description("Issue type name (e.g. Task, Bug). Defaults to the team or global default.")),
 		mcp.WithString("description", mcp.Description("Plain-text description; converted to Atlassian Document Format."), mcp.MaxLength(32000)),
 		mcp.WithString("assignee", mcp.Description("Optional assignee: accountId or email/name resolved to one active user.")),
@@ -52,9 +53,10 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError("summary is required"), nil
 	}
-	reporterRef, err := req.RequireString("reporter")
-	if err != nil {
-		return mcp.NewToolResultError("reporter is required"), nil
+	reporterRef := strings.TrimSpace(req.GetString("reporter", ""))
+	if reporterRef == "" && p.self == "" {
+		return mcp.NewToolResultError("reporter is required: this server files tickets as a shared service account, " +
+			"so it must be told on whose behalf"), nil
 	}
 
 	// 1. Resolve the target project and pick up team defaults.
@@ -72,10 +74,16 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 
 	// 3. Resolve reporter (required) and assignee (optional) to the
 	// dialect-appropriate identifier (accountId on Cloud, username on DC).
-	reporterID, err := resolveUserID(ctx, p.client, reporterRef, s.dc())
-	if err != nil {
-		return mcp.NewToolResultError("reporter: " + err.Error()), nil
+	// Filing as the caller needs no reporter field: Jira makes the creator the
+	// reporter, and the Modify Reporter permission is not involved.
+	reporterID := p.self
+	if reporterRef != "" {
+		reporterID, err = resolveUserID(ctx, p.client, reporterRef, s.dc())
+		if err != nil {
+			return mcp.NewToolResultError("reporter: " + err.Error()), nil
+		}
 	}
+	setReporter := reporterID != p.self
 	var assigneeID string
 	if ref := req.GetString("assignee", ""); ref != "" {
 		assigneeID, err = resolveUserID(ctx, p.client, ref, s.dc())
@@ -101,7 +109,6 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 		IssueTypeID: issueTypeID,
 		Summary:     summary,
 		Description: req.GetString("description", ""),
-		ReporterID:  reporterID,
 		AssigneeID:  assigneeID,
 		Priority:    req.GetString("priority", ""),
 		Labels:      mergeUnique(teamCfg.Labels, req.GetStringSlice("labels", nil)),
@@ -109,6 +116,10 @@ func (s *Server) handleCreateTicket(ctx context.Context, req mcp.CallToolRequest
 		DueDate:     req.GetString("due_date", ""),
 		ParentKey:   parentKey,
 		ExtraFields: teamCfg.Fields,
+	}
+
+	if setReporter {
+		in.ReporterID = reporterID
 	}
 
 	// 5. Validate against the create screen metadata (best effort).
@@ -159,7 +170,14 @@ func (s *Server) resolveProject(policy access.Policy, team, project string) (str
 		name = s.teams.DefaultTeam
 	}
 	if name == "" {
-		return "", config.TeamConfig{}, fmt.Errorf("no team or project given and no defaultTeam configured")
+		if s.cfg.DefaultProject != "" {
+			return s.resolveProject(policy, "", s.cfg.DefaultProject)
+		}
+		hint := "see list_projects"
+		if allowed := policy.Projects(); len(allowed) > 0 {
+			hint = "allowed: " + strings.Join(allowed, ", ")
+		}
+		return "", config.TeamConfig{}, fmt.Errorf("no project given and no default configured; pass project (%s)", hint)
 	}
 	cfg, ok := s.teams.Lookup(name)
 	if !ok {
@@ -191,9 +209,10 @@ func (s *Server) validateAgainstCreateMeta(ctx context.Context, in jira.CreateIs
 			"cannot be filed on behalf of someone else", in.ProjectKey, in.IssueTypeID)
 	}
 
-	provided := map[string]struct{}{"project": {}, "issuetype": {}, "summary": {}}
+	// Jira fills the reporter with the creator when the field is not sent, so
+	// it never counts as missing.
+	provided := map[string]struct{}{"project": {}, "issuetype": {}, "summary": {}, "reporter": {}}
 	markProvided(provided, "description", in.Description != "")
-	markProvided(provided, "reporter", in.ReporterID != "")
 	markProvided(provided, "assignee", in.AssigneeID != "")
 	markProvided(provided, "priority", in.Priority != "")
 	markProvided(provided, "labels", len(in.Labels) > 0)

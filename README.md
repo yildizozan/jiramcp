@@ -33,12 +33,12 @@ as the service account.
 | `update_comment` | Replace the body of an existing comment, by `comment_id`. |
 | `transition_jira_ticket` | List the available workflow transitions for an issue, or apply one (optionally with a comment). |
 | `search_users` | Resolve a name/email to the reporter/assignee id (accountId on Cloud, username on Server/DC). |
-| `list_projects` | List the projects in the team mapping. |
-| `list_issue_types` | List issue types valid for a mapped project. |
+| `list_projects` | List the projects the caller may use (see [Project access](#project-access)). |
+| `list_issue_types` | List issue types valid for an allowed project. |
 
-`create_jira_ticket` parameters: `summary` (required), `reporter` (required —
-accountId, or email/name resolved to exactly one active user), `team` and/or
-`project`, `issue_type`, `description` (plain text → ADF), `assignee`,
+`create_jira_ticket` parameters: `summary` (required), `reporter` (user id, or
+email/name resolved to exactly one active user; optional when the server runs
+with your own token, where it defaults to you), `team` and/or `project`, `issue_type`, `description` (plain text → ADF), `assignee`,
 `priority`, `labels`, `components`, `due_date` (`YYYY-MM-DD`), `parent`.
 
 ## Configuration (environment variables)
@@ -50,8 +50,10 @@ accountId, or email/name resolved to exactly one active user), `team` and/or
 | `JIRA_AUTH_EMAIL` | cloud | — | Service-account email |
 | `JIRA_API_TOKEN` | cloud | — | Service-account API token |
 | `JIRA_PAT` | dc | — | Personal access token (Bearer) |
-| `JIRA_TEAM_MAPPING_YAML` | one of | — | Inline team→project YAML (JSON also accepted) |
-| `JIRA_TEAM_MAPPING_FILE` | one of | — | Path to mapping file (e.g. ConfigMap mount) |
+| `JIRA_PROJECTS` | no | — | Comma-separated allow-list of project keys, e.g. `PAY,DOSD` |
+| `JIRA_DEFAULT_PROJECT` | no | — | Project used by create when no `project`/`team` is given |
+| `JIRA_TEAM_MAPPING_YAML` | no | — | Inline team→project YAML (JSON also accepted) |
+| `JIRA_TEAM_MAPPING_FILE` | no | — | Path to mapping file (e.g. ConfigMap mount) |
 | `JIRA_DEFAULT_ISSUE_TYPE` | no | `Task` | Fallback issue type |
 | `JIRA_HTTP_TIMEOUT` | no | `15s` | Per-request timeout |
 | `MCP_HTTP_ADDR` | no | `:8080` | HTTP listen address |
@@ -62,7 +64,22 @@ accountId, or email/name resolved to exactly one active user), `team` and/or
 | `LOG_LEVEL` | no | `info` | `debug`/`info`/`warn`/`error` |
 | `LOG_FORMAT` | no | `json` | `json` or `text` |
 
+### Project access
+
+Every issue operation is bounded by a project policy, resolved in this order:
+
+1. `JIRA_PROJECTS`, when set: only those projects.
+2. Otherwise the team mapping's projects, when a mapping is configured.
+3. Otherwise every project the Jira token can see (stdio only).
+
+The `http` service authenticates as a shared service account, so it refuses to
+start unless `JIRA_PROJECTS` or a team mapping bounds it. Jira's own
+permissions apply on top of the policy in every mode.
+
 ### Team mapping
+
+The mapping is optional. It routes a `team` name to a project and supplies
+per-team defaults; its projects form the policy when `JIRA_PROJECTS` is unset.
 
 ```yaml
 teams:
@@ -82,15 +99,27 @@ defaultTeam: platform
 `labels`/`components` are merged with any passed in the tool call. YAML is a
 superset of JSON, so an inline JSON document is still accepted.
 
-## Run locally
+## Run locally (developer setup)
+
+A developer runs the binary on their own machine with their **own** Jira
+token. Tickets are filed as them (no Modify Reporter permission needed), and
+they can work in every project Jira lets them into; no team mapping is needed.
 
 ```bash
-make build
-JIRA_BASE_URL=https://jira.yildizozan.com \
-JIRA_AUTH_EMAIL=svc@yildizozan.com JIRA_API_TOKEN=*** \
-JIRA_TEAM_MAPPING_FILE=examples/team-mapping.yaml \
-./bin/jiramcp          # stdio (same as: ./bin/jiramcp stdio)
+make build   # or download a release binary
+claude mcp add jiramcp \
+  -e JIRA_BASE_URL=https://jira.yildizozan.com \
+  -e JIRA_PAT=<your personal access token> \
+  -e JIRA_PROJECTS=PAY,DOSD \
+  -e JIRA_DEFAULT_PROJECT=DOSD \
+  -- /path/to/jiramcp
 ```
+
+`JIRA_PROJECTS` and `JIRA_DEFAULT_PROJECT` are optional: without the list every
+project your token can see is usable, and without a default each create names
+its `project`. On Jira Cloud use `JIRA_AUTH_EMAIL` + `JIRA_API_TOKEN` instead
+of `JIRA_PAT`. Running stdio with a shared service-account token instead makes
+that account the default reporter, so pass `reporter` explicitly in that case.
 
 The subcommand selects the transport: `jiramcp` or `jiramcp stdio` serves MCP
 over stdio, `jiramcp http` serves streamable HTTP. The Docker image defaults to
@@ -145,13 +174,14 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
   proxy (OIDC) in front of the endpoint and keep its access logs.
 - Credentials are only ever read from the environment (injected from a Secret);
   they are never logged (the startup config dump is redacted).
-- The team mapping is the authorization boundary for every issue operation:
-  `create` only targets mapped projects, and `get`/`update`/`add_comment`/
-  `list_comments`/`update_comment`/`transition` reject any issue key whose
-  project is not in the mapping. The check runs on the issue's current key as
-  Jira reports it, so the old key of an issue moved out of a mapped project
-  is rejected too. A `parent` passed to `create` must also be in a mapped
-  project, and `list_projects`/`list_issue_types` only report mapped projects.
+- The project policy ([Project access](#project-access)) is the authorization
+  boundary for every issue operation: `create` only targets allowed projects,
+  and `get`/`update`/`add_comment`/`list_comments`/`update_comment`/
+  `transition` reject any issue key whose project is not allowed. The check
+  runs on the issue's current key as Jira reports it, so the old key of an
+  issue moved out of an allowed project is rejected too. A `parent` passed to
+  `create` must also be in an allowed project, and `list_projects`/
+  `list_issue_types` only report allowed projects.
 - `search_users` is the exception: it searches the whole Jira user directory
   (names and, where Jira shows them, emails), because a reporter or assignee
   can be anyone. Keep that in mind when deciding who gets the token.

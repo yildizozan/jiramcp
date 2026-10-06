@@ -10,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"jiramcp/internal/access"
 )
 
 // AuthMode selects how the server authenticates to Jira.
@@ -43,8 +45,14 @@ type Config struct {
 	HTTPTimeout      time.Duration
 	DefaultIssueType string
 
-	// Teams is the resolved team -> project routing table.
+	// Teams is the resolved team -> project routing table. Optional: empty
+	// when no mapping is configured.
 	Teams *TeamMapping
+	// Projects is the optional JIRA_PROJECTS allow-list (upper-cased).
+	Projects []string
+	// DefaultProject is used by create when neither project nor team is given
+	// and the mapping has no defaultTeam.
+	DefaultProject string
 
 	// MCP transport.
 	Transport Transport
@@ -76,6 +84,8 @@ func Load(transport Transport) (*Config, error) {
 		APIToken:             env("JIRA_API_TOKEN", ""),
 		PAT:                  env("JIRA_PAT", ""),
 		DefaultIssueType:     env("JIRA_DEFAULT_ISSUE_TYPE", "Task"),
+		Projects:             splitKeys(env("JIRA_PROJECTS", "")),
+		DefaultProject:       strings.ToUpper(strings.TrimSpace(env("JIRA_DEFAULT_PROJECT", ""))),
 		Transport:            transport,
 		HTTPAddr:             env("MCP_HTTP_ADDR", ":8080"),
 		HTTPPath:             env("MCP_HTTP_PATH", "/mcp"),
@@ -147,10 +157,65 @@ func (c *Config) validate() error {
 		return fmt.Errorf("transport must be %q or %q, got %q", TransportHTTP, TransportStdio, c.Transport)
 	}
 
-	if c.Teams == nil || len(c.Teams.Teams) == 0 {
-		return fmt.Errorf("a team mapping is required (set JIRA_TEAM_MAPPING_YAML or JIRA_TEAM_MAPPING_FILE)")
+	if err := c.Teams.validate(); err != nil {
+		return err
 	}
-	return c.Teams.validate()
+	return c.validateProjects()
+}
+
+// validateProjects checks the project allow-list against the mapping and the
+// default project.
+func (c *Config) validateProjects() error {
+	mapped := c.Teams.ProjectKeyList()
+	// The HTTP endpoint acts as one shared service account, so it must not
+	// reach every project that account can see: one of the two lists must
+	// bound it. A local stdio server acts as its user, and Jira's own
+	// permissions bound it.
+	if c.Transport == TransportHTTP && len(mapped) == 0 && len(c.Projects) == 0 {
+		return fmt.Errorf("http transport needs JIRA_PROJECTS or a team mapping " +
+			"(JIRA_TEAM_MAPPING_YAML / JIRA_TEAM_MAPPING_FILE) to bound the projects it may use")
+	}
+	if len(c.Projects) > 0 {
+		allowed := access.Projects(c.Projects...)
+		for _, key := range mapped {
+			if !allowed.Allowed(key) {
+				return fmt.Errorf("team mapping routes to project %q, which is not in JIRA_PROJECTS", key)
+			}
+		}
+	}
+	if c.DefaultProject != "" && !c.ProjectPolicy().Allowed(c.DefaultProject) {
+		return fmt.Errorf("JIRA_DEFAULT_PROJECT %q is not an allowed project", c.DefaultProject)
+	}
+	return nil
+}
+
+// ProjectPolicy returns the projects this configuration allows: the
+// JIRA_PROJECTS list when set, else the mapping's projects, else every project
+// (Jira's own permissions decide).
+func (c *Config) ProjectPolicy() access.Policy {
+	if len(c.Projects) > 0 {
+		return access.Projects(c.Projects...)
+	}
+	if mapped := c.Teams.ProjectKeyList(); len(mapped) > 0 {
+		return access.Projects(mapped...)
+	}
+	return access.AllowAll()
+}
+
+// splitKeys parses a comma-separated list of project keys, upper-casing them
+// and dropping blanks and duplicates.
+func splitKeys(v string) []string {
+	var keys []string
+	seen := map[string]bool{}
+	for _, k := range strings.Split(v, ",") {
+		k = strings.ToUpper(strings.TrimSpace(k))
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // Redacted returns a copy safe for logging, with secrets masked.
@@ -168,6 +233,8 @@ func (c *Config) Redacted() map[string]any {
 		"allowUnauthenticated": c.AllowUnauthenticated,
 		"healthAddr":           c.HealthAddr,
 		"defaultIssueType":     c.DefaultIssueType,
+		"projects":             c.Projects,
+		"defaultProject":       c.DefaultProject,
 		"teams":                len(c.Teams.Teams),
 		"defaultTeam":          c.Teams.DefaultTeam,
 	}

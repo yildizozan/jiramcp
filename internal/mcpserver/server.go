@@ -12,7 +12,6 @@ import (
 
 	"github.com/mark3labs/mcp-go/server"
 
-	"jiramcp/internal/access"
 	"jiramcp/internal/config"
 	"jiramcp/internal/jira"
 )
@@ -32,12 +31,14 @@ type Server struct {
 	mcp    *server.MCPServer
 }
 
-// New builds the MCP server and registers all tools. version is reported to
-// clients as serverInfo.version; the binary passes its build version so both
-// `jiramcp --version` and MCP clients see the same value.
-func New(cfg *config.Config, client jira.Client, logger *slog.Logger, version string) *Server {
+// New builds the MCP server and registers all tools. self is the Jira user id
+// the client authenticates as when that is the caller's own account (a local
+// developer's token), or "" for a shared service account. version is reported
+// to clients as serverInfo.version; the binary passes its build version so
+// both `jiramcp --version` and MCP clients see the same value.
+func New(cfg *config.Config, client jira.Client, self string, logger *slog.Logger, version string) *Server {
 	s := &Server{
-		base:   &principal{client: client, policy: access.Projects(cfg.Teams.ProjectKeyList()...)},
+		base:   &principal{client: client, policy: cfg.ProjectPolicy(), self: self},
 		teams:  cfg.Teams,
 		cfg:    cfg,
 		logger: logger,

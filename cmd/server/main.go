@@ -109,7 +109,14 @@ func run(ctx context.Context, transport config.Transport) error {
 		defer shutdown()
 	}
 
-	srv := mcpserver.New(cfg, client, logger, version)
+	// Over stdio the token belongs to the developer running the binary, so
+	// tickets default to them as reporter. The HTTP service authenticates as a
+	// shared service account, which must never become the default reporter.
+	self := ""
+	if cfg.Transport == config.TransportStdio {
+		self = me.Ref()
+	}
+	srv := mcpserver.New(cfg, client, self, logger, version)
 
 	switch cfg.Transport {
 	case config.TransportStdio:

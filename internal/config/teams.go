@@ -30,8 +30,8 @@ type TeamMapping struct {
 	DefaultTeam string                `json:"defaultTeam,omitempty"`
 }
 
-// loadTeamMapping reads the mapping from JIRA_TEAM_MAPPING_YAML (inline) or
-// JIRA_TEAM_MAPPING_FILE (path, typically a mounted ConfigMap). The document is
+// loadTeamMapping reads the optional mapping from JIRA_TEAM_MAPPING_YAML
+// (inline) or JIRA_TEAM_MAPPING_FILE (path, typically a mounted ConfigMap). The document is
 // YAML; since YAML is a superset of JSON, inline JSON is still accepted.
 func loadTeamMapping() (*TeamMapping, error) {
 	inline := env("JIRA_TEAM_MAPPING_YAML", "")
@@ -48,7 +48,10 @@ func loadTeamMapping() (*TeamMapping, error) {
 		}
 		raw = b
 	default:
-		return nil, fmt.Errorf("no team mapping configured: set JIRA_TEAM_MAPPING_YAML or JIRA_TEAM_MAPPING_FILE")
+		// The mapping is optional: without it create needs an explicit project
+		// (or JIRA_DEFAULT_PROJECT) and the project policy comes from
+		// JIRA_PROJECTS or Jira's own permissions.
+		return &TeamMapping{Teams: map[string]TeamConfig{}}, nil
 	}
 
 	// UnmarshalStrict honors the json struct tags and rejects unknown fields.

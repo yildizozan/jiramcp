@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -131,5 +132,82 @@ func TestLoad_DefaultTeamMustExist(t *testing.T) {
 	t.Setenv("JIRA_TEAM_MAPPING_YAML", `{"teams":{"p":{"projectKey":"P"}},"defaultTeam":"ghost"}`)
 	if _, err := Load(TransportStdio); err == nil {
 		t.Fatal("expected error when defaultTeam is absent from teams")
+	}
+}
+
+// localDC sets the minimum environment for a developer running the binary
+// with their own Data Center PAT and no team mapping.
+func localDC(t *testing.T) {
+	t.Helper()
+	t.Setenv("JIRA_BASE_URL", "https://jira.yildizozan.com")
+	t.Setenv("JIRA_PAT", "pat")
+}
+
+func TestLoad_StdioWithoutMappingAllowsAllProjects(t *testing.T) {
+	localDC(t)
+	cfg, err := Load(TransportStdio)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(cfg.Teams.Teams) != 0 {
+		t.Fatalf("expected an empty mapping, got %v", cfg.Teams.Teams)
+	}
+	if p := cfg.ProjectPolicy(); !p.Allowed("ANY") || p.Projects() != nil {
+		t.Fatal("without a mapping or JIRA_PROJECTS, stdio must leave projects to Jira's permissions")
+	}
+}
+
+func TestLoad_ProjectsAllowList(t *testing.T) {
+	localDC(t)
+	t.Setenv("JIRA_PROJECTS", " dosd, PAY ,,dosd")
+	t.Setenv("JIRA_DEFAULT_PROJECT", "pay")
+	cfg, err := Load(TransportStdio)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if strings.Join(cfg.Projects, ",") != "DOSD,PAY" {
+		t.Fatalf("JIRA_PROJECTS parsed as %v, want [DOSD PAY]", cfg.Projects)
+	}
+	if cfg.DefaultProject != "PAY" {
+		t.Fatalf("default project %q, want PAY", cfg.DefaultProject)
+	}
+	p := cfg.ProjectPolicy()
+	if !p.Allowed("dosd") || p.Allowed("HR") {
+		t.Fatal("policy must follow JIRA_PROJECTS")
+	}
+}
+
+func TestLoad_ProjectsValidation(t *testing.T) {
+	cases := map[string]struct {
+		transport Transport
+		env       map[string]string
+	}{
+		"http without any project bound": {TransportHTTP, map[string]string{"MCP_AUTH_TOKEN": "s"}},
+		"mapping outside JIRA_PROJECTS": {TransportStdio, map[string]string{
+			"JIRA_PROJECTS": "PAY", "JIRA_TEAM_MAPPING_YAML": `{"teams":{"hr":{"projectKey":"HR"}}}`,
+		}},
+		"default project not allowed": {TransportStdio, map[string]string{
+			"JIRA_PROJECTS": "PAY", "JIRA_DEFAULT_PROJECT": "HR",
+		}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			localDC(t)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			if _, err := Load(tc.transport); err == nil {
+				t.Fatal("expected a configuration error")
+			}
+		})
+	}
+}
+
+func TestLoad_HTTPWithProjectsOnly(t *testing.T) {
+	localDC(t)
+	t.Setenv("MCP_AUTH_TOKEN", "s")
+	t.Setenv("JIRA_PROJECTS", "PAY")
+	if _, err := Load(TransportHTTP); err != nil {
+		t.Fatalf("JIRA_PROJECTS alone must be enough to bound the http service: %v", err)
 	}
 }

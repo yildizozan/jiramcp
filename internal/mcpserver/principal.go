@@ -14,6 +14,11 @@ import (
 type principal struct {
 	client jira.Client
 	policy access.Policy
+	// self is the caller's own Jira user id (accountId on Cloud, username on
+	// Server/DC) when the client acts as the caller, so create can default the
+	// reporter to them. It is empty when the client is a shared service
+	// account: then create must be told who the reporter is.
+	self string
 }
 
 type principalKey struct{}
