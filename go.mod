@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/go-jose/go-jose/v4 v4.1.4
+	github.com/go-jose/go-jose/v4 v4.1.5
 	github.com/mark3labs/mcp-go v1.1.1
 	github.com/spf13/cobra v1.10.2
 	sigs.k8s.io/yaml v1.6.0
