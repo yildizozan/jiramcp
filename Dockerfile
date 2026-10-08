@@ -7,7 +7,7 @@
 # ---- build ----
 # Chainguard's Wolfi-based Go toolchain image. Build as root so the BuildKit
 # cache mounts (/go, /root/.cache) are writable; this stage is not shipped.
-FROM cgr.dev/chainguard/go:latest@sha256:86536f93eb6f89f55d3b6970c5957b332c40da7496d4296ca74c9767250b9a54 AS build
+FROM cgr.dev/chainguard/go:latest@sha256:aeecafdc18ad049656644ba7ff3bfac22490fc65a1656832c2bed9a005301dc2 AS build
 USER root
 WORKDIR /src
 ENV CGO_ENABLED=0 GOOS=linux GOPATH=/go GOCACHE=/root/.cache/go-build
