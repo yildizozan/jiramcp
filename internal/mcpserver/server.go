@@ -64,6 +64,11 @@ func New(cfg *config.Config, client jira.Client, self string, logger *slog.Logge
 	s.mcp.AddTool(searchUsersTool(), s.handleSearchUsers)
 	s.mcp.AddTool(listProjectsTool(), s.handleListProjects)
 	s.mcp.AddTool(listIssueTypesTool(), s.handleListIssueTypes)
+	// The client implements search for Server/Data Center only; Cloud's
+	// search endpoint pages differently and is not supported yet.
+	if s.dc() {
+		s.mcp.AddTool(searchTicketsTool(), s.handleSearchTickets)
+	}
 	return s
 }
 

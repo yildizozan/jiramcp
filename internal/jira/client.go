@@ -171,6 +171,13 @@ type Issue struct {
 	URL         string   `json:"url"`
 }
 
+// SearchPage is one page of issue search results. NextStartAt is the offset
+// of the next page, or 0 when this is the last page.
+type SearchPage struct {
+	Issues      []Issue
+	NextStartAt int
+}
+
 // Transition is an available workflow transition for an issue.
 type Transition struct {
 	ID     string `json:"id"`
@@ -198,6 +205,10 @@ type Client interface {
 	IssueKey(ctx context.Context, key string) (string, error)
 	// GetIssue reads the main fields of an existing issue.
 	GetIssue(ctx context.Context, key string) (*Issue, error)
+	// SearchIssues runs a JQL query and returns up to limit issues starting
+	// at offset startAt. Description, reporter, labels and the other fields
+	// GetIssue reads are not filled in.
+	SearchIssues(ctx context.Context, jql string, startAt, limit int) (*SearchPage, error)
 	// UpdateIssue edits fields on an existing issue.
 	UpdateIssue(ctx context.Context, key string, in UpdateIssueInput) error
 	// AddComment appends a comment to an existing issue.

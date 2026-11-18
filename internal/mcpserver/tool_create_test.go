@@ -51,6 +51,13 @@ type fakeClient struct {
 
 	transitions []jira.Transition
 	appliedID   string
+
+	searchPage    *jira.SearchPage
+	searchErr     error
+	searchJQL     string
+	searchStartAt int
+	searchLimit   int
+	searchCalls   int
 }
 
 func (f *fakeClient) Myself(context.Context) (*jira.User, error) {
@@ -134,6 +141,17 @@ func (f *fakeClient) Transitions(context.Context, string) ([]jira.Transition, er
 func (f *fakeClient) TransitionIssue(_ context.Context, _, transitionID, _ string) error {
 	f.appliedID = transitionID
 	return nil
+}
+func (f *fakeClient) SearchIssues(_ context.Context, jql string, startAt, limit int) (*jira.SearchPage, error) {
+	f.searchCalls++
+	f.searchJQL, f.searchStartAt, f.searchLimit = jql, startAt, limit
+	if f.searchErr != nil {
+		return nil, f.searchErr
+	}
+	if f.searchPage == nil {
+		return &jira.SearchPage{}, nil
+	}
+	return f.searchPage, nil
 }
 func (f *fakeClient) BrowseURL(key string) string { return "https://jira.yildizozan.com/browse/" + key }
 

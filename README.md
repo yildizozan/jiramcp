@@ -32,6 +32,7 @@ as the service account.
 | `list_comments` | List the newest comments on an issue (oldest first), with the `id` needed to edit one. |
 | `update_comment` | Replace the body of an existing comment, by `comment_id`. |
 | `transition_jira_ticket` | List the available workflow transitions for an issue, or apply one (optionally with a comment). |
+| `search_jira_tickets` | Search issues with JQL (`jql`, optional `orderBy`, `limit` up to 50, `cursor` for the next page). Returns key, summary, status, type, priority, assignee and last update. Server/Data Center only; not offered on Cloud. |
 | `search_users` | Resolve a name/email to the reporter/assignee id (accountId on Cloud, username on Server/DC). |
 | `list_projects` | List the projects the caller may use (see [Project access](#project-access)). |
 | `list_issue_types` | List issue types valid for an allowed project. |
@@ -267,6 +268,12 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
   issue moved out of an allowed project is rejected too. A `parent` passed to
   `create` must also be in an allowed project, and `list_projects`/
   `list_issue_types` only report allowed projects.
+- `search_jira_tickets` sends the caller's JQL as
+  `project in (<allowed>) AND (<jql>)` and then drops every result outside an
+  allowed project. The result filter is the boundary: JQL that closes the
+  parentheses (`x) OR (project = HR`) can widen the query, but not the
+  results. Dropped results are logged as a warning with the caller. Ordering
+  goes in `orderBy`, because `ORDER BY` cannot sit inside the parentheses.
 - `search_users` is the exception: it searches the whole Jira user directory
   (names and, where Jira shows them, emails), because a reporter or assignee
   can be anyone. Keep that in mind when deciding who gets the token.

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -571,5 +572,66 @@ func TestCallerClient_NoCredentialsThenPerCallerAuth(t *testing.T) {
 	}
 	if err := base.ServerInfo(context.Background()); err != nil || cap.auth != "" {
 		t.Fatalf("deriving a caller client must not change the base client (auth=%q)", cap.auth)
+	}
+}
+
+func TestSearchIssues_DC_RequestAndPaging(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"startAt":20,"maxResults":2,"total":30,"issues":[
+		{"key":"PAY-1","fields":{"summary":"one","status":{"name":"Open"},"issuetype":{"name":"Bug"},"priority":null,"assignee":{"displayName":"Jane"},"updated":"2026-11-01T10:00:00.000+0000"}},
+		{"key":"PAY-2","fields":{"summary":"two","status":{"name":"Done"},"issuetype":{"name":"Task"}}}]}`, &cap)
+	c := dcClient(srv.URL)
+
+	page, err := c.SearchIssues(context.Background(), `project in ("PAY") AND (status = Open)`, 20, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cap.method != http.MethodPost || cap.path != "/rest/api/2/search" {
+		t.Fatalf("got %s %s, want POST /rest/api/2/search", cap.method, cap.path)
+	}
+	if cap.body["jql"] != `project in ("PAY") AND (status = Open)` || cap.body["startAt"] != float64(20) || cap.body["maxResults"] != float64(2) {
+		t.Fatalf("unexpected body: %v", cap.body)
+	}
+	if fields, _ := cap.body["fields"].([]any); len(fields) == 0 {
+		t.Fatalf("fields must be limited, got %v", cap.body["fields"])
+	}
+	if len(page.Issues) != 2 || page.Issues[0].Assignee != "Jane" || page.Issues[0].Priority != "" ||
+		page.Issues[1].Status != "Done" || page.Issues[0].URL != srv.URL+"/browse/PAY-1" {
+		t.Fatalf("unexpected issues: %+v", page.Issues)
+	}
+	if page.NextStartAt != 22 {
+		t.Fatalf("NextStartAt = %d, want 22", page.NextStartAt)
+	}
+}
+
+func TestSearchIssues_DC_LastPage(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{"startAt":0,"total":1,"issues":[{"key":"PAY-1","fields":{}}]}`, &cap)
+	page, err := dcClient(srv.URL).SearchIssues(context.Background(), "x", 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.NextStartAt != 0 {
+		t.Fatalf("NextStartAt = %d, want 0 on the last page", page.NextStartAt)
+	}
+}
+
+func TestSearchIssues_DC_JQLErrorSurfaces(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 400, `{"errorMessages":["Error in the JQL Query: Expecting ')' before the end of the query."],"errors":{}}`, &cap)
+	_, err := dcClient(srv.URL).SearchIssues(context.Background(), "status = (", 0, 20)
+	if err == nil || !strings.Contains(err.Error(), "Error in the JQL Query") {
+		t.Fatalf("expected the JQL error to be surfaced, got %v", err)
+	}
+}
+
+func TestSearchIssues_CloudUnsupported(t *testing.T) {
+	var cap capture
+	srv := newServer(t, 200, `{}`, &cap)
+	if _, err := cloudClient(srv.URL).SearchIssues(context.Background(), "x", 0, 20); err == nil {
+		t.Fatal("expected Cloud search to be refused")
+	}
+	if cap.path != "" {
+		t.Fatal("must not call Jira on Cloud")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -470,38 +471,32 @@ type person struct {
 	DisplayName string `json:"displayName"`
 }
 
-// GetIssue implements Client. Optional fields Jira returns as null (assignee,
-// priority, parent) decode to empty strings.
-func (c *RESTClient) GetIssue(ctx context.Context, key string) (*Issue, error) {
-	q := url.Values{}
-	q.Set("fields", issueFields)
-	data, err := c.do(ctx, "get issue", http.MethodGet, c.api("/issue/"+url.PathEscape(key)), q, nil)
-	if err != nil {
-		return nil, err
-	}
-	var w struct {
-		Key    string `json:"key"`
-		Fields struct {
-			Summary     string          `json:"summary"`
-			Description json.RawMessage `json:"description"`
-			Status      named           `json:"status"`
-			IssueType   named           `json:"issuetype"`
-			Priority    named           `json:"priority"`
-			Assignee    person          `json:"assignee"`
-			Reporter    person          `json:"reporter"`
-			Labels      []string        `json:"labels"`
-			Components  []named         `json:"components"`
-			DueDate     string          `json:"duedate"`
-			Parent      struct {
-				Key string `json:"key"`
-			} `json:"parent"`
-			Created string `json:"created"`
-			Updated string `json:"updated"`
-		} `json:"fields"`
-	}
-	if err := json.Unmarshal(data, &w); err != nil {
-		return nil, fmt.Errorf("decoding issue: %w", err)
-	}
+// wireIssue is an issue as Jira returns it, for the fields in issueFields.
+type wireIssue struct {
+	Key    string `json:"key"`
+	Fields struct {
+		Summary     string          `json:"summary"`
+		Description json.RawMessage `json:"description"`
+		Status      named           `json:"status"`
+		IssueType   named           `json:"issuetype"`
+		Priority    named           `json:"priority"`
+		Assignee    person          `json:"assignee"`
+		Reporter    person          `json:"reporter"`
+		Labels      []string        `json:"labels"`
+		Components  []named         `json:"components"`
+		DueDate     string          `json:"duedate"`
+		Parent      struct {
+			Key string `json:"key"`
+		} `json:"parent"`
+		Created string `json:"created"`
+		Updated string `json:"updated"`
+	} `json:"fields"`
+}
+
+// toIssue converts a decoded wire issue into the exported form. Optional
+// fields Jira returns as null (assignee, priority, parent) or did not send
+// decode to empty values.
+func (c *RESTClient) toIssue(w wireIssue) Issue {
 	f := w.Fields
 	components := make([]string, 0, len(f.Components))
 	for _, comp := range f.Components {
@@ -511,7 +506,7 @@ func (c *RESTClient) GetIssue(ctx context.Context, key string) (*Issue, error) {
 	if labels == nil {
 		labels = []string{}
 	}
-	return &Issue{
+	return Issue{
 		Key:         w.Key,
 		Summary:     f.Summary,
 		Description: decodeRichText(f.Description),
@@ -527,7 +522,61 @@ func (c *RESTClient) GetIssue(ctx context.Context, key string) (*Issue, error) {
 		Created:     f.Created,
 		Updated:     f.Updated,
 		URL:         c.browseURL(w.Key),
-	}, nil
+	}
+}
+
+// GetIssue implements Client.
+func (c *RESTClient) GetIssue(ctx context.Context, key string) (*Issue, error) {
+	q := url.Values{}
+	q.Set("fields", issueFields)
+	data, err := c.do(ctx, "get issue", http.MethodGet, c.api("/issue/"+url.PathEscape(key)), q, nil)
+	if err != nil {
+		return nil, err
+	}
+	var w wireIssue
+	if err := json.Unmarshal(data, &w); err != nil {
+		return nil, fmt.Errorf("decoding issue: %w", err)
+	}
+	issue := c.toIssue(w)
+	return &issue, nil
+}
+
+// searchFields is the field list SearchIssues requests: enough to pick an
+// issue from a result list, without the description, which is costly per hit.
+var searchFields = []string{"summary", "status", "issuetype", "priority", "assignee", "updated"}
+
+// SearchIssues implements Client. Only Server/Data Center is supported: Cloud
+// replaced /rest/api/3/search with an endpoint that pages differently, and
+// is not wired up yet. POST keeps long JQL out of the URL.
+func (c *RESTClient) SearchIssues(ctx context.Context, jql string, startAt, limit int) (*SearchPage, error) {
+	if !c.dc {
+		return nil, errors.New("issue search is only supported on Jira Server/Data Center")
+	}
+	data, err := c.do(ctx, "search issues", http.MethodPost, c.api("/search"), nil, map[string]any{
+		"jql":        jql,
+		"startAt":    startAt,
+		"maxResults": limit,
+		"fields":     searchFields,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var w struct {
+		StartAt int         `json:"startAt"`
+		Total   int         `json:"total"`
+		Issues  []wireIssue `json:"issues"`
+	}
+	if err := json.Unmarshal(data, &w); err != nil {
+		return nil, fmt.Errorf("decoding search results: %w", err)
+	}
+	page := &SearchPage{Issues: make([]Issue, 0, len(w.Issues))}
+	for _, wi := range w.Issues {
+		page.Issues = append(page.Issues, c.toIssue(wi))
+	}
+	if next := w.StartAt + len(w.Issues); len(w.Issues) > 0 && next < w.Total {
+		page.NextStartAt = next
+	}
+	return page, nil
 }
 
 // IssueKey implements Client. Only the summary field is requested, to keep the
