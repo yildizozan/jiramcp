@@ -38,14 +38,14 @@ func TestSearch_ScopesJQLToAllowedProjects(t *testing.T) {
 	}
 }
 
-// Caller JQL can close the wrapping parentheses and OR in another project.
-// The result filter, not the project clause, must keep those issues out.
+// The result filter is a second line behind the project clause: an issue from
+// another project must never reach the caller, however Jira returned it.
 func TestSearch_DropsIssuesOutsidePolicy(t *testing.T) {
 	f := &fakeClient{searchPage: &jira.SearchPage{Issues: []jira.Issue{
 		{Key: "PAY-1", Summary: "allowed"},
 		{Key: "HR-9", Summary: "leaked"},
 	}}}
-	out, msg, isErr := searchResult(t, f, testCfg(), map[string]any{"jql": "x) OR (project = HR"})
+	out, msg, isErr := searchResult(t, f, testCfg(), map[string]any{"jql": "status = Open"})
 	if isErr {
 		t.Fatalf("unexpected error: %s", msg)
 	}
@@ -92,6 +92,38 @@ func TestSearch_RejectsOrderByInJQL(t *testing.T) {
 	}
 	if f.searchCalls != 0 {
 		t.Fatal("must not call Jira for rejected jql")
+	}
+}
+
+// JQL that closes the wrapping parentheses would escape the project clause.
+// Even with results filtered, nextCursor would then reveal whether hidden
+// issues match, so such JQL is refused before it reaches Jira.
+func TestSearch_RejectsUnbalancedParentheses(t *testing.T) {
+	for _, jql := range []string{
+		"x) OR (project = HR",
+		`key = PAY-0) OR (project = HR AND summary ~ "pay"`,
+		"status in (Open",
+		`summary ~ "unterminated`,
+	} {
+		f := &fakeClient{}
+		_, msg, isErr := searchResult(t, f, testCfg(), map[string]any{"jql": jql})
+		if !isErr || f.searchCalls != 0 {
+			t.Fatalf("expected %q to be rejected without calling Jira, got %q", jql, msg)
+		}
+	}
+}
+
+func TestSearch_ParenthesesInStringsAllowed(t *testing.T) {
+	for _, jql := range []string{
+		`summary ~ "a)b"`,
+		`summary ~ 'x(' AND status in (Open, "In Progress")`,
+		`summary ~ "say \"hi)\""`,
+	} {
+		f := &fakeClient{}
+		_, msg, isErr := searchResult(t, f, testCfg(), map[string]any{"jql": jql})
+		if isErr {
+			t.Fatalf("expected %q to be accepted, got %q", jql, msg)
+		}
 	}
 }
 

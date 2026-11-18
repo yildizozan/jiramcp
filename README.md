@@ -269,11 +269,13 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
   `create` must also be in an allowed project, and `list_projects`/
   `list_issue_types` only report allowed projects.
 - `search_jira_tickets` sends the caller's JQL as
-  `project in (<allowed>) AND (<jql>)` and then drops every result outside an
-  allowed project. The result filter is the boundary: JQL that closes the
-  parentheses (`x) OR (project = HR`) can widen the query, but not the
-  results. Dropped results are logged as a warning with the caller. Ordering
-  goes in `orderBy`, because `ORDER BY` cannot sit inside the parentheses.
+  `project in (<allowed>) AND (<jql>)`. JQL with unbalanced parentheses
+  (outside quoted strings) is rejected, so it cannot close that scope. As a
+  second check, every result outside an allowed project is dropped and
+  logged as a warning with the caller. Ordering goes in `orderBy`, because
+  `ORDER BY` cannot sit inside the parentheses. Jira still answers
+  `project = X` for an unmapped X with "does not exist" or no results, so a
+  caller can learn whether a project key exists.
 - `search_users` is the exception: it searches the whole Jira user directory
   (names and, where Jira shows them, emails), because a reporter or assignee
   can be anyone. Keep that in mind when deciding who gets the token.

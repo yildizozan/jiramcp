@@ -68,9 +68,8 @@ func (s *Server) handleSearchTickets(ctx context.Context, req mcp.CallToolReques
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	// The project clause narrows the query, but caller JQL can break out of
-	// its parentheses ("x) OR (project = HR"). Filtering the results by policy
-	// is the authorization boundary; the clause only keeps pages full.
+	// scopedJQL keeps the query inside the allowed projects. Filtering the
+	// results again guards against any JQL that still escapes that scope.
 	hits := make([]searchHit, 0, len(page.Issues))
 	dropped := 0
 	for _, is := range page.Issues {
@@ -108,6 +107,9 @@ func scopedJQL(policy access.Policy, jql, orderBy string) (string, error) {
 	if orderByClause.MatchString(jql) {
 		return "", errors.New("jql must not contain ORDER BY; pass the ordering as orderBy")
 	}
+	if !balancedParens(jql) {
+		return "", errors.New("jql has unbalanced parentheses")
+	}
 	// nil means the policy does not restrict projects; an empty list means it
 	// allows none, which notAllowed cannot tell apart.
 	switch projects := policy.Projects(); {
@@ -125,6 +127,39 @@ func scopedJQL(policy access.Policy, jql, orderBy string) (string, error) {
 		jql += " ORDER BY " + orderBy
 	}
 	return jql, nil
+}
+
+// balancedParens reports whether every parenthesis outside a quoted string
+// closes one opened before it. Balanced JQL cannot close the parentheses that
+// scope it to the allowed projects; without this, "x) OR (project = HR" would
+// widen the query, and even with the results filtered, nextCursor would reveal
+// whether hidden issues match.
+func balancedParens(jql string) bool {
+	depth := 0
+	var quote rune
+	escaped := false
+	for _, r := range jql {
+		switch {
+		case escaped:
+			escaped = false
+		case quote != 0:
+			if r == '\\' {
+				escaped = true
+			} else if r == quote {
+				quote = 0
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == '(':
+			depth++
+		case r == ')':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		}
+	}
+	return depth == 0 && quote == 0
 }
 
 // parseCursor turns a nextCursor back into the result offset.
