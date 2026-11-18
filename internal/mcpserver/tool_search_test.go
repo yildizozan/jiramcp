@@ -113,6 +113,24 @@ func TestSearch_RejectsUnbalancedParentheses(t *testing.T) {
 	}
 }
 
+// A backslash outside a quoted string would make the parenthesis check and
+// Jira's parser disagree: if Jira read \" or \( there as an escape, these
+// inputs, balanced to the check, would close the project clause. Jira's
+// handling is not relied on; such JQL is refused.
+func TestSearch_RejectsBackslashOutsideStrings(t *testing.T) {
+	for _, jql := range []string{
+		`summary ~ a\" ) OR project = HR OR (summary ~ "x\""`,
+		`a\( ) OR project = HR OR (b \)`,
+		`summary ~ a\'`,
+	} {
+		f := &fakeClient{}
+		_, msg, isErr := searchResult(t, f, testCfg(), map[string]any{"jql": jql})
+		if !isErr || f.searchCalls != 0 {
+			t.Fatalf("expected %q to be rejected without calling Jira, got %q", jql, msg)
+		}
+	}
+}
+
 func TestSearch_ParenthesesInStringsAllowed(t *testing.T) {
 	for _, jql := range []string{
 		`summary ~ "a)b"`,

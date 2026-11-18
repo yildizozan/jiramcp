@@ -107,8 +107,8 @@ func scopedJQL(policy access.Policy, jql, orderBy string) (string, error) {
 	if orderByClause.MatchString(jql) {
 		return "", errors.New("jql must not contain ORDER BY; pass the ordering as orderBy")
 	}
-	if !balancedParens(jql) {
-		return "", errors.New("jql has unbalanced parentheses")
+	if err := checkJQLStructure(jql); err != nil {
+		return "", err
 	}
 	// nil means the policy does not restrict projects; an empty list means it
 	// allows none, which notAllowed cannot tell apart.
@@ -129,12 +129,17 @@ func scopedJQL(policy access.Policy, jql, orderBy string) (string, error) {
 	return jql, nil
 }
 
-// balancedParens reports whether every parenthesis outside a quoted string
-// closes one opened before it. Balanced JQL cannot close the parentheses that
-// scope it to the allowed projects; without this, "x) OR (project = HR" would
-// widen the query, and even with the results filtered, nextCursor would reveal
-// whether hidden issues match.
-func balancedParens(jql string) bool {
+// checkJQLStructure rejects JQL that could close the parentheses scoping it to
+// the allowed projects: every parenthesis outside a quoted string must close
+// one opened before it. Without this, "x) OR (project = HR" would widen the
+// query, and even with the results filtered, nextCursor would reveal whether
+// hidden issues match.
+//
+// A backslash outside a quoted string is refused. If Jira read \" or \( there
+// as an escape, this check and Jira would see different parentheses, and
+// input balanced here could still close the scope. Refusing it keeps the
+// check safe however Jira treats it; inside quotes, backslash escapes work.
+func checkJQLStructure(jql string) error {
 	depth := 0
 	var quote rune
 	escaped := false
@@ -148,6 +153,8 @@ func balancedParens(jql string) bool {
 			} else if r == quote {
 				quote = 0
 			}
+		case r == '\\':
+			return errors.New(`jql may use a backslash only inside a quoted string, e.g. summary ~ "a\"b"`)
 		case r == '"' || r == '\'':
 			quote = r
 		case r == '(':
@@ -155,11 +162,17 @@ func balancedParens(jql string) bool {
 		case r == ')':
 			depth--
 			if depth < 0 {
-				return false
+				return errors.New("jql has unbalanced parentheses")
 			}
 		}
 	}
-	return depth == 0 && quote == 0
+	if quote != 0 {
+		return errors.New("jql has an unterminated quoted string")
+	}
+	if depth != 0 {
+		return errors.New("jql has unbalanced parentheses")
+	}
+	return nil
 }
 
 // parseCursor turns a nextCursor back into the result offset.
