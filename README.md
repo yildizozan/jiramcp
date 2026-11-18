@@ -270,12 +270,16 @@ runs **stateless**, so replicas and the HPA need no sticky sessions.
   `list_issue_types` only report allowed projects.
 - `search_jira_tickets` sends the caller's JQL as
   `project in (<allowed>) AND (<jql>)`. JQL with unbalanced parentheses
-  (outside quoted strings) is rejected, so it cannot close that scope. As a
+  (outside quoted strings) is rejected, so it cannot close that scope. A
+  backslash is allowed only inside a quoted string, so the parenthesis check
+  never depends on how Jira reads an escape outside one. As a
   second check, every result outside an allowed project is dropped and
   logged as a warning with the caller. Ordering goes in `orderBy`, because
-  `ORDER BY` cannot sit inside the parentheses. Jira still answers
-  `project = X` for an unmapped X with "does not exist" or no results, so a
-  caller can learn whether a project key exists.
+  `ORDER BY` cannot sit inside the parentheses. The search runs with Jira's
+  query validation off, so a project, issue key or version that does not
+  exist matches nothing instead of failing with "does not exist"; otherwise
+  the error would reveal which keys exist outside the allowed projects.
+  JQL syntax errors are still reported.
 - `search_users` is the exception: it searches the whole Jira user directory
   (names and, where Jira shows them, emails), because a reporter or assignee
   can be anyone. Keep that in mind when deciding who gets the token.

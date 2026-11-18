@@ -548,15 +548,21 @@ var searchFields = []string{"summary", "status", "issuetype", "priority", "assig
 // SearchIssues implements Client. Only Server/Data Center is supported: Cloud
 // replaced /rest/api/3/search with an endpoint that pages differently, and
 // is not wired up yet. POST keeps long JQL out of the URL.
+//
+// validateQuery is off so a value that does not exist (a project, issue key
+// or version) matches nothing instead of failing with "does not exist". The
+// caller is scoped to some projects, and that error would tell them whether
+// a key exists in a project they may not use. Syntax errors still fail.
 func (c *RESTClient) SearchIssues(ctx context.Context, jql string, startAt, limit int) (*SearchPage, error) {
 	if !c.dc {
 		return nil, errors.New("issue search is only supported on Jira Server/Data Center")
 	}
 	data, err := c.do(ctx, "search issues", http.MethodPost, c.api("/search"), nil, map[string]any{
-		"jql":        jql,
-		"startAt":    startAt,
-		"maxResults": limit,
-		"fields":     searchFields,
+		"jql":           jql,
+		"startAt":       startAt,
+		"maxResults":    limit,
+		"fields":        searchFields,
+		"validateQuery": false,
 	})
 	if err != nil {
 		return nil, err

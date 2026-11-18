@@ -592,6 +592,11 @@ func TestSearchIssues_DC_RequestAndPaging(t *testing.T) {
 	if cap.body["jql"] != `project in ("PAY") AND (status = Open)` || cap.body["startAt"] != float64(20) || cap.body["maxResults"] != float64(2) {
 		t.Fatalf("unexpected body: %v", cap.body)
 	}
+	// Validation would answer "does not exist" for keys in projects the
+	// caller may not use, revealing that they exist.
+	if cap.body["validateQuery"] != false {
+		t.Fatalf("validateQuery must be false, got %v", cap.body["validateQuery"])
+	}
 	if fields, _ := cap.body["fields"].([]any); len(fields) == 0 {
 		t.Fatalf("fields must be limited, got %v", cap.body["fields"])
 	}
